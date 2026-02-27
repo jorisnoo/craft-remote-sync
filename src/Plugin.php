@@ -15,4 +15,12 @@ class Plugin extends BasePlugin
         parent::init();
         self::$plugin = $this;
     }
+
+    public function getConfig(): array
+    {
+        $fileConfig = \Craft::$app->getConfig()->getConfigFromFile('remote-sync');
+        $defaults = require __DIR__ . '/config.php';
+
+        return array_replace_recursive($defaults, $fileConfig);
+    }
 }
