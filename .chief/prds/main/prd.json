@@ -1,0 +1,137 @@
+{
+  "project": "Craft Remote Sync",
+  "description": "A Craft CMS plugin that syncs databases and storage files between remote and local Craft environments. It provides `pull` and `push` console commands that use Craft's built-in `db/backup` and `db/restore` CLI commands over SSH, and `rsync` for file transfers. Always performs full database syncs (no table exclusions or selective sync). This is a port of the existing `laravel-remote-sync` Laravel package, adapted for Craft CMS's plugin architecture and CLI tooling. The initial version targets Craft 4, with a subsequent branch for Craft 5.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Scaffold plugin structure",
+      "description": "As a developer, I need the basic Craft CMS plugin scaffolding so the package can be installed and recognized by Craft.",
+      "acceptanceCriteria": [
+        "`composer.json` with `type: craft-plugin`, requiring `craftcms/cms ^4.0`, `php ^8.0.2`",
+        "Main `Plugin` class extending `craft\\base\\Plugin` in `src/Plugin.php`",
+        "Plugin registers correctly when installed via Composer",
+        "Plugin handle is `remote-sync`",
+        "PSR-4 autoloading configured for `jorge\\craftremotesync\\` namespace pointing to `src/`"
+      ],
+      "priority": 1,
+      "passes": true
+    },
+    {
+      "id": "US-002",
+      "title": "Create configuration system",
+      "description": "As a user, I want to configure remote environments (host, path, push permissions) via a config file so I can connect to my servers.",
+      "acceptanceCriteria": [
+        "Plugin provides a default config file publishable to `config/remote-sync.php`",
+        "Config supports multiple named remotes, each with `host` (SSH connection string), `path` (remote app root), and `pushAllowed` (boolean)",
+        "Config has a `default` key to set the default remote",
+        "Config has a `paths` key (array of storage subdirectories to sync, e.g. `['rebrand']`). Paths are relative to the Craft `storage/` directory",
+        "Config has `timeouts` for each operation (snapshot create, download, upload, file sync)",
+        "Config values can be overridden with environment variables where appropriate"
+      ],
+      "priority": 2,
+      "passes": true
+    },
+    {
+      "id": "US-003",
+      "title": "Create RemoteSyncService",
+      "description": "As a developer, I need a core service class that handles SSH commands, rsync operations, and snapshot management so the commands can delegate to it.",
+      "acceptanceCriteria": [
+        "Service registered in the plugin's container",
+        "`getRemote(?string $name): RemoteConfig` — returns config for a named remote (or default)",
+        "`getAvailableRemotes(): array` — returns all configured remote names",
+        "`createRemoteBackup(): string` — SSHs to remote, runs `craft db/backup --zip`, returns the backup filename",
+        "`downloadBackup(string $filename): void` — rsync downloads remote backup to local `storage/backups/`",
+        "`uploadBackup(string $filename): void` — rsync uploads local backup to remote `storage/backups/`",
+        "`restoreLocalBackup(string $path): void` — runs `craft db/restore \u003cpath\u003e --drop-all-tables` locally via Process",
+        "`loadRemoteBackup(string $filename): void` — SSHs to remote, runs `craft db/restore \u003cpath\u003e --drop-all-tables`",
+        "`deleteRemoteBackup(string $filename): void` — SSHs to remote and deletes the backup file",
+        "`rsyncDownload(string $storagePath): void` — downloads files from remote storage path to local",
+        "`rsyncUpload(string $storagePath): void` — uploads files from local storage path to remote",
+        "`rsyncDryRun(string $storagePath, string $direction): string` — dry-run for preview",
+        "Supports atomic deployment detection (checks for `/current` symlink on remote)"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-004",
+      "title": "Create RemoteConfig data class",
+      "description": "As a developer, I need a value object for remote configuration so it's easy to pass around and access remote details.",
+      "acceptanceCriteria": [
+        "Readonly class with properties: `name`, `host`, `path`, `pushAllowed` (default false)",
+        "`workingPath()` method returns `path` or `path/current` if atomic deployment detected",
+        "`storagePath()` method returns `workingPath()/storage`"
+      ],
+      "priority": 3,
+      "passes": false
+    },
+    {
+      "id": "US-005",
+      "title": "Create InteractsWithRemote trait",
+      "description": "As a developer, I need shared CLI functionality (remote selection, confirmations, previews) extracted into a trait so both pull and push commands stay DRY.",
+      "acceptanceCriteria": [
+        "`selectRemote(): RemoteConfig` — prompts user to pick a remote if multiple exist, or uses default",
+        "`initializeRemote(RemoteConfig): RemoteConfig` — detects atomic deployment, returns updated config",
+        "`ensureNotProduction(): void` — aborts if `CRAFT_ENVIRONMENT` is `production`",
+        "`ensurePushAllowed(RemoteConfig): void` — aborts if remote's `pushAllowed` is false",
+        "`confirmPull(): bool` — requires typing \"yes\" to confirm",
+        "`confirmPush(): bool` — requires typing \"yes\" to confirm with extra warning",
+        "`displayDatabasePreview(): void` — shows info about the sync about to happen",
+        "`displayFilesPreview(string $dryRunOutput): void` — parses rsync dry-run output and shows file counts",
+        "`generateBackupName(): string` — creates a timestamped backup name"
+      ],
+      "priority": 4,
+      "passes": false
+    },
+    {
+      "id": "US-006",
+      "title": "Implement pull command",
+      "description": "As a user, I want to run `craft remote-sync/pull` to pull the database and/or storage files from a remote environment to my local machine.",
+      "acceptanceCriteria": [
+        "Command registered as `remote-sync/pull`",
+        "Prompts to select a remote (if multiple configured)",
+        "Prompts to select operation: database, files, or both",
+        "Refuses to run if `CRAFT_ENVIRONMENT` is `production`",
+        "Database pull flow: Creates a local backup first (auto-backup safety net), runs `craft db/backup --zip` on remote via SSH, downloads the backup via rsync, restores locally via `craft db/restore \u003cpath\u003e --drop-all-tables`, cleans up remote and local backup files",
+        "Files pull flow: Shows dry-run preview of files to be synced, after confirmation runs rsync to download from each configured storage path",
+        "Requires typing \"yes\" before any destructive operation",
+        "Shows progress output during transfers",
+        "Handles errors gracefully (cleans up partial snapshots on failure)"
+      ],
+      "priority": 5,
+      "passes": false
+    },
+    {
+      "id": "US-007",
+      "title": "Implement push command",
+      "description": "As a user, I want to run `craft remote-sync/push` to push my local database and/or storage files to a remote environment.",
+      "acceptanceCriteria": [
+        "Command registered as `remote-sync/push`",
+        "Prompts to select a remote (if multiple configured)",
+        "Prompts to select operation: database, files, or both",
+        "Refuses to run if `CRAFT_ENVIRONMENT` is `production`",
+        "Refuses to run if remote's `pushAllowed` is false",
+        "Database push flow: Creates a backup on the remote first (safety net), runs `craft db/backup --zip` locally, uploads the backup via rsync to remote `storage/backups/`, restores on remote via SSH `craft db/restore \u003cpath\u003e --drop-all-tables`, cleans up local and remote backup files",
+        "Files push flow: Shows dry-run preview of files to be synced, after confirmation runs rsync to upload from each configured storage path",
+        "Requires typing \"yes\" before any destructive operation (with extra warning for push)",
+        "Shows progress output during transfers",
+        "Handles errors gracefully"
+      ],
+      "priority": 6,
+      "passes": false
+    },
+    {
+      "id": "US-008",
+      "title": "Branch for Craft 5",
+      "description": "As a maintainer, I need to create a `craft-4` branch from the completed Craft 4 work, then update `main` for Craft 5 compatibility.",
+      "acceptanceCriteria": [
+        "`craft-4` branch created from the completed Craft 4 implementation",
+        "`main` branch updated with Craft 5 changes: `composer.json` updated to `craftcms/cms ^5.0`, `php ^8.2`",
+        "Any API changes needed applied (based on research: minimal for this plugin since we only use console commands and base plugin class)",
+        "Both branches build/install without errors"
+      ],
+      "priority": 7,
+      "passes": false
+    }
+  ]
+}
