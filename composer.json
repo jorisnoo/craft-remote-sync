@@ -1,0 +1,66 @@
+{
+    "name": "jorisnoo/craft-remote-sync",
+    "description": "Sync databases and storage files between remote and local Craft CMS environments",
+    "type": "craft-plugin",
+    "license": "MIT",
+    "keywords": [
+        "craft",
+        "cms",
+        "craftcms",
+        "craft-plugin",
+        "remote",
+        "sync",
+        "database",
+        "rsync"
+    ],
+    "support": {
+        "source": "https://github.com/jorisnoo/craft-remote-sync",
+        "issues": "https://github.com/jorisnoo/craft-remote-sync/issues"
+    },
+    "authors": [
+        {
+            "name": "Joris Noordermeer",
+            "email": "contact@noordermeer.ch",
+            "homepage": "https://github.com/jorisnoo",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^8.0.2",
+        "craftcms/cms": "^4.0"
+    },
+    "require-dev": {
+        "pestphp/pest": "^2.0",
+        "mockery/mockery": "^1.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "jorge\\craftremotesync\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "jorge\\craftremotesync\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "vendor/bin/pest"
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true,
+            "yiisoft/yii2-composer": true,
+            "craftcms/plugin-installer": true
+        }
+    },
+    "extra": {
+        "name": "Remote Sync",
+        "handle": "remote-sync",
+        "hasCpSettings": false,
+        "hasCpSection": false,
+        "class": "jorge\\craftremotesync\\Plugin"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
