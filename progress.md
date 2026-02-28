@@ -1,4 +1,5 @@
 ## Codebase Patterns
+- Console controllers: register namespace in `Plugin::init()` with `if (\Craft::$app->request->isConsoleRequest) { $this->controllerNamespace = '...'; }` — command `remote-sync/pull` comes from plugin handle + `PullController::actionIndex()`
 - Craft 4 plugin: `composer.json` uses `type: craft-plugin`, `extra.handle`, `extra.class`, `extra.name`
 - Namespace: `jorge\craftremotesync\` (lowercase jorge, no separators) pointing to `src/`
 - Plugin class extends `craft\base\Plugin` (not just `Plugin`)
@@ -66,4 +67,16 @@
   - `str_starts_with()` is PHP 8.0+ compatible — safe to use in this project
   - `confirmPull()`/`confirmPush()` use `$this->prompt()` and check for literal string `"yes"` (not just a boolean confirm)
   - `displayFilesPreview()` filters rsync output headers (`sending `, `receiving `, `sent `, `total size `) to count actual file lines
+---
+
+## 2026-02-28 - US-006
+- What was implemented: `craft remote-sync/pull` console command for pulling database and/or storage files from a remote environment
+- Files changed: `src/console/controllers/PullController.php` (new), `src/services/RemoteSyncService.php` (added `createLocalBackup()`), `src/Plugin.php` (registered console controllers namespace)
+- **Learnings for future iterations:**
+  - Craft console commands: register `$this->controllerNamespace` inside `if (Craft::$app->request->isConsoleRequest)` in `Plugin::init()`; command ID is `plugin-handle/controller-id` (e.g., `remote-sync/pull`)
+  - `PullController` extends `craft\console\Controller` and uses `InteractsWithRemote` trait; `$defaultAction = 'index'` makes `craft remote-sync/pull` invoke `actionIndex()`
+  - Safety-net backup (local) is created after confirmation but before any remote operations — shows progress with stdout messages throughout
+  - Error handling: if remote backup creation/download/restore fails, attempt cleanup of the remote backup before returning exit code 1
+  - For files pull: do dry-run previews for all paths first, then single confirmation, then rsync each path in sequence
+  - `match` expression is PHP 8.0+ compatible — safe to use in this project
 ---
