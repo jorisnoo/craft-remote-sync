@@ -39,6 +39,28 @@ trait InteractsWithRemote
         return $this->selectedRemote;
     }
 
+    public function selectPushRemote(): RemoteConfig
+    {
+        $service = Module::$instance->getRemoteSyncService();
+        $remotes = $service->getAvailablePushRemotes();
+
+        if (empty($remotes)) {
+            error("No remotes are configured with push enabled. Set 'pushAllowed' => true in config/remote-sync.php");
+            exit(1);
+        }
+
+        if (count($remotes) === 1) {
+            $this->selectedRemote = $service->getRemote($remotes[0]);
+            return $this->selectedRemote;
+        }
+
+        $options = array_combine($remotes, $remotes);
+        $name = select(label: 'Select a remote to push to', options: $options, default: $remotes[0]);
+
+        $this->selectedRemote = $service->getRemote($name);
+        return $this->selectedRemote;
+    }
+
     public function initializeRemote(RemoteConfig $remote): RemoteConfig
     {
         $service = Module::$instance->getRemoteSyncService();

@@ -129,6 +129,12 @@ class RemoteSyncService extends Component
         return array_keys($this->getConfig()['remotes'] ?? []);
     }
 
+    public function getAvailablePushRemotes(): array
+    {
+        $remotes = $this->getConfig()['remotes'] ?? [];
+        return array_keys(array_filter($remotes, fn($c) => (bool) ($c['pushAllowed'] ?? false)));
+    }
+
     public function detectAtomicDeployment(RemoteConfig $remote): bool
     {
         $command = '[ -L ' . escapeshellarg($remote->path . '/current') . ' ] && echo yes || echo no';
