@@ -3,6 +3,7 @@
 namespace jorge\craftremotesync;
 
 use craft\base\Plugin as BasePlugin;
+use jorge\craftremotesync\services\RemoteSyncService;
 
 class Plugin extends BasePlugin
 {
@@ -14,6 +15,15 @@ class Plugin extends BasePlugin
     {
         parent::init();
         self::$plugin = $this;
+
+        $this->setComponents([
+            'remoteSyncService' => RemoteSyncService::class,
+        ]);
+    }
+
+    public function getRemoteSyncService(): RemoteSyncService
+    {
+        return $this->get('remoteSyncService');
     }
 
     public function getConfig(): array
