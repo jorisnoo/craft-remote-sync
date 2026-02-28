@@ -152,8 +152,8 @@ class PullController extends Controller
 
         foreach ($paths as $storagePath) {
             try {
-                spin(fn() => $service->rsyncDownload($remote, $storagePath), "Syncing '{$storagePath}'...");
-                info("Synced '{$storagePath}'.");
+                $output = spin(fn() => $service->rsyncDownload($remote, $storagePath), "Syncing '{$storagePath}'...");
+                $this->displaySyncOutput($output);
             } catch (\RuntimeException $e) {
                 error("Error syncing '{$storagePath}': " . $e->getMessage());
                 return 1;

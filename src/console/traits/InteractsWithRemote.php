@@ -158,6 +158,42 @@ trait InteractsWithRemote
         }
     }
 
+    public function displaySyncOutput(string $output): void
+    {
+        $lines = explode("\n", trim($output));
+        $files = [];
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if (empty($line)) {
+                continue;
+            }
+            if (
+                str_starts_with($line, 'sending ') ||
+                str_starts_with($line, 'receiving ') ||
+                str_starts_with($line, 'sent ') ||
+                str_starts_with($line, 'total size ') ||
+                $line === './'
+            ) {
+                continue;
+            }
+            $files[] = $line;
+        }
+
+        if (empty($files)) {
+            info('Already up to date.');
+            return;
+        }
+
+        $count = count($files);
+        $display = array_slice($files, 0, 10);
+        table(headers: ['Synced files'], rows: array_map(fn($f) => [$f], $display));
+
+        if ($count > 10) {
+            note('... and ' . ($count - 10) . ' more file(s)');
+        }
+    }
+
     public function generateBackupName(): string
     {
         return 'remote-sync-' . date('Y-m-d-His') . '.sql.gz';
