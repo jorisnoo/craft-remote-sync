@@ -1,6 +1,7 @@
 ## Codebase Patterns
 - Console controllers: register namespace in `Plugin::init()` with `if (\Craft::$app->request->isConsoleRequest) { $this->controllerNamespace = '...'; }` — command `remote-sync/pull` comes from plugin handle + `PullController::actionIndex()`
 - Craft 4 plugin: `composer.json` uses `type: craft-plugin`, `extra.handle`, `extra.class`, `extra.name`
+- Craft 5 plugin: same structure, `craftcms/cms ^5.0`, `php ^8.2`; use `readonly` properties in value objects
 - Namespace: `jorge\craftremotesync\` (lowercase jorge, no separators) pointing to `src/`
 - Plugin class extends `craft\base\Plugin` (not just `Plugin`)
 - Craft 4 plugin installer plugin: `craftcms/plugin-installer` must be allowed in `config.allow-plugins`
@@ -10,12 +11,14 @@
 - Porting from laravel-remote-sync: Craft uses `craft db/backup --zip` and `craft db/restore <path> --drop-all-tables` instead of artisan snapshot commands
 - Config in Craft: use `\Craft::$app->getConfig()->getConfigFromFile('remote-sync')` to load from `config/remote-sync.php`
 - Service registration in Craft: use `$this->setComponents([...])` inside `Plugin::init()`, add typed getter `getXxx(): ServiceClass` for IDE support
-- Craft environment check: use `\Craft::$app->env` (Craft 4) or check `CRAFT_ENVIRONMENT` env var
-- PHP 8.0 target: do NOT use `readonly` keyword (requires PHP 8.1+); use clone pattern for immutable updates instead
+- Craft environment check: use `\Craft::$app->env` (works in both Craft 4 and 5)
+- PHP 8.0 target (Craft 4): do NOT use `readonly` keyword; use clone pattern for immutable updates
+- PHP 8.2 target (Craft 5): use `readonly` properties; withXxx() returns `new self(named: args)` instead of clone+mutate
 - SSH host format: `user@host` or `user@host:port`; parse port with regex and pass `-p PORT` to ssh, `-e 'ssh -p PORT'` to rsync
 - Craft path helpers: `\Craft::$app->getPath()->getDbBackupPath()` for backup path, `getStoragePath()` for storage root
 - Craft root for local commands: `\Craft::getAlias('@root') . '/craft'` as the craft executable path
-- Atomic deployment: check `[ -L /path/current ]` via SSH; RemoteConfig stores `isAtomic` bool and uses `withAtomic()` clone method
+- Atomic deployment: check `[ -L /path/current ]` via SSH; RemoteConfig stores `isAtomic` bool and uses `withAtomic()` method
+- Branch strategy: `craft-4` branch for Craft 4 implementation; `main` branch tracks latest (Craft 5)
 
 ---
 
@@ -92,4 +95,15 @@
   - Unlike pull (which cleans up on error), push doesn't need to clean up on error since the remote still has its original safety backup
   - `confirmPush()` shows extra "cannot be undone" warning; files push also uses `confirmPush()` for consistent extra-warning UX
   - `rsyncDryRun(..., 'upload')` used for preview; `rsyncUpload()` used for actual sync
+---
+
+## 2026-02-28 - US-008
+- What was implemented: Created `craft-4` branch preserving the complete Craft 4 implementation; updated `main` branch for Craft 5 compatibility
+- Files changed: `composer.json` (version bumps), `src/models/RemoteConfig.php` (readonly properties)
+- **Learnings for future iterations:**
+  - Branch strategy: create the preservation branch first from current HEAD, then switch to main and make the version bumps
+  - `.gitignore` added on `craft-4` branch to prevent `.chief/` from being tracked
+  - Craft 5 requires `craftcms/cms ^5.0` and `php ^8.2`; API surface used by this plugin (console commands, base Plugin class, path helpers) is unchanged between Craft 4 and 5
+  - With PHP 8.2+, RemoteConfig uses `readonly` constructor properties; `withAtomic()` updated to `new self(named: args)` instead of clone+mutate pattern
+  - `.chief/prds/main/prd.json` is tracked by git even when `.chief/` is in `.gitignore` (was committed before gitignore was added); use `git add -f` if needed
 ---
