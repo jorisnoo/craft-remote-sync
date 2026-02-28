@@ -23,10 +23,10 @@ A Craft CMS module that syncs databases and storage files between remote and loc
 
 ## Requirements
 
-| | Version |
-|---|---|
-| Craft CMS | 4.x |
-| PHP | 8.0+ |
+|              | Version                                                          |
+|--------------|------------------------------------------------------------------|
+| Craft CMS    | 4.x                                                              |
+| PHP          | 8.0+                                                             |
 | Server tools | `ssh`, `rsync`, `mysqldump` / `pg_dump` on both local and remote |
 
 ---
