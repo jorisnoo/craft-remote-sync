@@ -34,9 +34,9 @@ return [
 
     'remotes' => [
         'production' => [
-            'host' => getenv('REMOTE_SYNC_HOST') ?: 'user@example.com',
-            'path' => getenv('REMOTE_SYNC_PATH') ?: '/var/www/html',
-            'pushAllowed' => (bool) (getenv('REMOTE_SYNC_PUSH_ALLOWED') ?: false),
+            'host' => getenv('REMOTE_SYNC_PRODUCTION_HOST') ?: 'forge@example.com',
+            'path' => getenv('REMOTE_SYNC_PRODUCTION_PATH') ?: '/home/forge/example.com',
+            'pushAllowed' => (bool) (getenv('REMOTE_SYNC_PRODUCTION_PUSH_ALLOWED') ?: false),
         ],
     ],
 
@@ -51,7 +51,8 @@ return [
     */
 
     'paths' => [
-        // 'rebrand',
+         'app',
+         'rebrand',
     ],
 
     /*

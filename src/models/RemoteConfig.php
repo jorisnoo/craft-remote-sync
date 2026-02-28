@@ -1,6 +1,6 @@
 <?php
 
-namespace jorge\craftremotesync\models;
+namespace Noo\CraftRemoteSync\models;
 
 class RemoteConfig
 {

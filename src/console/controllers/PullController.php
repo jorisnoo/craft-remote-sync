@@ -1,11 +1,11 @@
 <?php
 
-namespace jorge\craftremotesync\console\controllers;
+namespace Noo\CraftRemoteSync\console\controllers;
 
 use craft\console\Controller;
-use jorge\craftremotesync\console\traits\InteractsWithRemote;
-use jorge\craftremotesync\models\RemoteConfig;
-use jorge\craftremotesync\Module;
+use Noo\CraftRemoteSync\console\traits\InteractsWithRemote;
+use Noo\CraftRemoteSync\models\RemoteConfig;
+use Noo\CraftRemoteSync\Module;
 
 /**
  * Remote Sync Pull command.

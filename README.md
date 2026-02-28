@@ -42,7 +42,7 @@ Then add it to your `config/app.php`:
 ```php
 return [
     'modules' => [
-        'remote-sync' => \jorge\craftremotesync\Module::class,
+        'remote-sync' => \Noo\CraftRemoteSync\Module::class,
     ],
     'bootstrap' => ['remote-sync'],
 ];

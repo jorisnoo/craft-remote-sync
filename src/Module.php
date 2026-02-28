@@ -1,9 +1,9 @@
 <?php
 
-namespace jorge\craftremotesync;
+namespace Noo\CraftRemoteSync;
 
 use craft\base\Module as BaseModule;
-use jorge\craftremotesync\services\RemoteSyncService;
+use Noo\CraftRemoteSync\services\RemoteSyncService;
 
 class Module extends BaseModule
 {
@@ -19,7 +19,7 @@ class Module extends BaseModule
         ]);
 
         if (\Craft::$app->request->isConsoleRequest) {
-            $this->controllerNamespace = 'jorge\\craftremotesync\\console\\controllers';
+            $this->controllerNamespace = 'Noo\\CraftRemoteSync\\console\\controllers';
         }
     }
 

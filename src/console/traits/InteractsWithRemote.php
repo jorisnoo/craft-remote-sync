@@ -1,9 +1,9 @@
 <?php
 
-namespace jorge\craftremotesync\console\traits;
+namespace Noo\CraftRemoteSync\console\traits;
 
-use jorge\craftremotesync\models\RemoteConfig;
-use jorge\craftremotesync\Module;
+use Noo\CraftRemoteSync\models\RemoteConfig;
+use Noo\CraftRemoteSync\Module;
 
 trait InteractsWithRemote
 {
