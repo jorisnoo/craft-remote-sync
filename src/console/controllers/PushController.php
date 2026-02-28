@@ -7,6 +7,14 @@ use Noo\CraftRemoteSync\console\traits\InteractsWithRemote;
 use Noo\CraftRemoteSync\models\RemoteConfig;
 use Noo\CraftRemoteSync\Module;
 
+use function Laravel\Prompts\error;
+use function Laravel\Prompts\info;
+use function Laravel\Prompts\intro;
+use function Laravel\Prompts\note;
+use function Laravel\Prompts\outro;
+use function Laravel\Prompts\spin;
+use function Laravel\Prompts\warning;
+
 /**
  * Remote Sync Push command.
  *
@@ -25,11 +33,17 @@ class PushController extends Controller
     {
         $this->ensureNotProduction();
 
+        intro('Remote Sync — Push');
+
         $remote = $this->selectRemote();
         $this->ensurePushAllowed($remote);
-        $remote = $this->initializeRemote($remote);
+        $remote = spin(fn() => $this->initializeRemote($remote), 'Checking remote configuration...');
 
-        $operation = $this->selectOperation();
+        if ($remote->isAtomic) {
+            info('Atomic deployment detected.');
+        }
+
+        $operation = $this->selectOperation('push');
 
         if ($operation === 'database' || $operation === 'both') {
             $result = $this->pushDatabase($remote);
@@ -45,24 +59,8 @@ class PushController extends Controller
             }
         }
 
-        $this->stdout("\nDone!\n");
+        outro('Done!');
         return 0;
-    }
-
-    private function selectOperation(): string
-    {
-        $this->stdout("\nSelect operation:\n");
-        $this->stdout("  [1] database\n");
-        $this->stdout("  [2] files\n");
-        $this->stdout("  [3] both\n");
-
-        $input = $this->prompt('Select operation', ['default' => '3']);
-
-        return match ($input) {
-            '1', 'database' => 'database',
-            '2', 'files'    => 'files',
-            default         => 'both',
-        };
     }
 
     private function pushDatabase(RemoteConfig $remote): int
@@ -72,45 +70,35 @@ class PushController extends Controller
         $this->displayDatabasePreview();
 
         if (!$this->confirmPush()) {
-            $this->stdout("Aborted.\n");
+            info('Aborted.');
             return 0;
         }
 
         // Create a remote backup as a safety net before overwriting the remote database
-        $this->stdout("\nCreating remote backup (safety net)...\n");
         try {
-            $remoteSafetyBackup = $service->createRemoteBackup($remote);
-            $this->stdout("Remote backup created: {$remoteSafetyBackup}\n");
+            $remoteSafetyBackup = spin(fn() => $service->createRemoteBackup($remote), 'Creating remote safety backup...');
+            info("Remote safety backup: {$remoteSafetyBackup}");
         } catch (\RuntimeException $e) {
-            $this->stderr("Warning: Could not create remote safety backup: " . $e->getMessage() . "\n");
+            warning("Could not create remote safety backup: " . $e->getMessage());
         }
 
         $localFilename = null;
 
         try {
-            $this->stdout("\nCreating local backup...\n");
-            $localFilename = $service->createLocalBackup();
-            $this->stdout("Local backup created: {$localFilename}\n");
-
-            $this->stdout("Uploading backup...\n");
-            $service->uploadBackup($remote, $localFilename);
-            $this->stdout("Upload complete.\n");
-
-            $this->stdout("Restoring database on remote...\n");
-            $service->loadRemoteBackup($remote, $localFilename);
-            $this->stdout("Remote database restored.\n");
+            $localFilename = spin(fn() => $service->createLocalBackup(), 'Creating local backup...');
+            spin(fn() => $service->uploadBackup($remote, $localFilename), 'Uploading backup...');
+            spin(fn() => $service->loadRemoteBackup($remote, $localFilename), 'Restoring database on remote...');
         } catch (\RuntimeException $e) {
-            $this->stderr("\nError during database push: " . $e->getMessage() . "\n");
+            error("Error during database push: " . $e->getMessage());
             return 1;
         }
 
         // Clean up the uploaded backup on remote
         if ($localFilename !== null) {
-            $this->stdout("Cleaning up remote uploaded backup...\n");
             try {
-                $service->deleteRemoteBackup($remote, $localFilename);
+                spin(fn() => $service->deleteRemoteBackup($remote, $localFilename), 'Cleaning up remote uploaded backup...');
             } catch (\RuntimeException $e) {
-                $this->stderr("Warning: Could not clean up remote backup: " . $e->getMessage() . "\n");
+                warning("Could not clean up remote backup: " . $e->getMessage());
             }
         }
 
@@ -118,8 +106,7 @@ class PushController extends Controller
         if ($localFilename !== null) {
             $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $localFilename;
             if (file_exists($localBackupPath)) {
-                $this->stdout("Cleaning up local backup...\n");
-                @unlink($localBackupPath);
+                spin(fn() => @unlink($localBackupPath), 'Cleaning up local backup...');
             }
         }
 
@@ -133,35 +120,32 @@ class PushController extends Controller
         $paths = $config['paths'] ?? [];
 
         if (empty($paths)) {
-            $this->stdout("\nNo storage paths configured in config/remote-sync.php. Skipping files sync.\n");
+            info('No storage paths configured in config/remote-sync.php. Skipping files sync.');
             return 0;
         }
 
-        $this->stdout("\nPreviewing files to sync...\n");
-
         foreach ($paths as $storagePath) {
-            $this->stdout("\nPath: {$storagePath}\n");
             try {
-                $dryRunOutput = $service->rsyncDryRun($remote, $storagePath, 'upload');
+                $dryRunOutput = spin(fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'), "Previewing '{$storagePath}'...");
+                note("Path: {$storagePath}");
                 $this->displayFilesPreview($dryRunOutput);
             } catch (\RuntimeException $e) {
-                $this->stderr("Could not run preview for '{$storagePath}': " . $e->getMessage() . "\n");
+                error("Could not run preview for '{$storagePath}': " . $e->getMessage());
                 return 1;
             }
         }
 
         if (!$this->confirmPush()) {
-            $this->stdout("Aborted.\n");
+            info('Aborted.');
             return 0;
         }
 
         foreach ($paths as $storagePath) {
-            $this->stdout("\nSyncing '{$storagePath}'...\n");
             try {
-                $service->rsyncUpload($remote, $storagePath);
-                $this->stdout("Done syncing '{$storagePath}'.\n");
+                spin(fn() => $service->rsyncUpload($remote, $storagePath), "Syncing '{$storagePath}'...");
+                info("Synced '{$storagePath}'.");
             } catch (\RuntimeException $e) {
-                $this->stderr("Error syncing '{$storagePath}': " . $e->getMessage() . "\n");
+                error("Error syncing '{$storagePath}': " . $e->getMessage());
                 return 1;
             }
         }

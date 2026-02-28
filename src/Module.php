@@ -19,7 +19,7 @@ class Module extends BaseModule
         ]);
 
         if (\Craft::$app->request->isConsoleRequest) {
-            $this->controllerNamespace = 'jorge\\craftremotesync\\console\\controllers';
+            $this->controllerNamespace = 'Noo\\CraftRemoteSync\\console\\controllers';
         }
     }
 

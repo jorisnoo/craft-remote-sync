@@ -5,6 +5,14 @@ namespace Noo\CraftRemoteSync\console\traits;
 use Noo\CraftRemoteSync\models\RemoteConfig;
 use Noo\CraftRemoteSync\Module;
 
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\error;
+use function Laravel\Prompts\info;
+use function Laravel\Prompts\note;
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\table;
+use function Laravel\Prompts\warning;
+
 trait InteractsWithRemote
 {
     protected ?RemoteConfig $selectedRemote = null;
@@ -15,7 +23,7 @@ trait InteractsWithRemote
         $remotes = $service->getAvailableRemotes();
 
         if (empty($remotes)) {
-            $this->stderr("No remotes are configured in config/remote-sync.php\n");
+            error("No remotes are configured in config/remote-sync.php");
             exit(1);
         }
 
@@ -24,22 +32,8 @@ trait InteractsWithRemote
             return $this->selectedRemote;
         }
 
-        $this->stdout("Available remotes:\n");
-        foreach ($remotes as $i => $name) {
-            $this->stdout('  [' . ($i + 1) . "] {$name}\n");
-        }
-
-        $name = $this->prompt('Select a remote', ['default' => $remotes[0]]);
-
-        if (!in_array($name, $remotes, true)) {
-            $index = (int) $name - 1;
-            if (isset($remotes[$index])) {
-                $name = $remotes[$index];
-            } else {
-                $this->stderr("Invalid remote: {$name}\n");
-                exit(1);
-            }
-        }
+        $options = array_combine($remotes, $remotes);
+        $name = select(label: 'Select a remote', options: $options, default: $remotes[0]);
 
         $this->selectedRemote = $service->getRemote($name);
         return $this->selectedRemote;
@@ -47,13 +41,8 @@ trait InteractsWithRemote
 
     public function initializeRemote(RemoteConfig $remote): RemoteConfig
     {
-        $this->stdout("Checking remote configuration...\n");
         $service = Module::$instance->getRemoteSyncService();
         $isAtomic = $service->detectAtomicDeployment($remote);
-
-        if ($isAtomic) {
-            $this->stdout("Atomic deployment detected (using /current symlink).\n");
-        }
 
         $remote = $remote->withAtomic($isAtomic);
         $this->selectedRemote = $remote;
@@ -64,7 +53,7 @@ trait InteractsWithRemote
     {
         $env = \Craft::$app->env;
         if ($env === 'production') {
-            $this->stderr("This command cannot be run in a production environment.\n");
+            error("This command cannot be run in a production environment.");
             exit(1);
         }
     }
@@ -72,24 +61,21 @@ trait InteractsWithRemote
     public function ensurePushAllowed(RemoteConfig $remote): void
     {
         if (!$remote->pushAllowed) {
-            $this->stderr("Push is not allowed for remote '{$remote->name}'. Set 'pushAllowed' => true in config/remote-sync.php\n");
+            error("Push is not allowed for remote '{$remote->name}'. Set 'pushAllowed' => true in config/remote-sync.php");
             exit(1);
         }
     }
 
     public function confirmPull(): bool
     {
-        $this->stdout("\nWARNING: This will overwrite your local database with data from the remote.\n");
-        $confirmation = $this->prompt('Type "yes" to continue');
-        return $confirmation === 'yes';
+        warning('This will overwrite your LOCAL database with data from the remote.');
+        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, pull from remote', no: 'No, abort');
     }
 
     public function confirmPush(): bool
     {
-        $this->stdout("\nWARNING: This will overwrite the REMOTE database with your local data.\n");
-        $this->stdout("This action is destructive and cannot be easily undone.\n");
-        $confirmation = $this->prompt('Type "yes" to continue');
-        return $confirmation === 'yes';
+        warning('This will overwrite the REMOTE database with your local data. This action is destructive and cannot be easily undone.');
+        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, push to remote', no: 'No, abort');
     }
 
     public function displayDatabasePreview(): void
@@ -99,10 +85,11 @@ trait InteractsWithRemote
         }
 
         $remote = $this->selectedRemote;
-        $this->stdout("\nDatabase sync:\n");
-        $this->stdout("  Remote : {$remote->name}\n");
-        $this->stdout("  Host   : {$remote->host}\n");
-        $this->stdout("  Path   : {$remote->workingPath()}\n");
+        table(headers: ['Setting', 'Value'], rows: [
+            ['Remote', $remote->name],
+            ['Host',   $remote->host],
+            ['Path',   $remote->workingPath()],
+        ]);
     }
 
     public function displayFilesPreview(string $dryRunOutput): void
@@ -127,21 +114,25 @@ trait InteractsWithRemote
         }
 
         $count = count($files);
-        $this->stdout("\nFiles to sync: {$count} file(s)\n");
+        $display = array_slice($files, 0, 10);
+        table(headers: ['Files to sync'], rows: array_map(fn($f) => [$f], $display));
 
-        if ($count > 0) {
-            $display = array_slice($files, 0, 10);
-            foreach ($display as $file) {
-                $this->stdout("  {$file}\n");
-            }
-            if ($count > 10) {
-                $this->stdout('  ... and ' . ($count - 10) . " more\n");
-            }
+        if ($count > 10) {
+            note('... and ' . ($count - 10) . ' more file(s)');
         }
     }
 
     public function generateBackupName(): string
     {
         return 'remote-sync-' . date('Y-m-d-His') . '.sql.gz';
+    }
+
+    protected function selectOperation(string $direction): string
+    {
+        return select(
+            label: "What would you like to {$direction}?",
+            options: ['database' => 'Database only', 'files' => 'Files only', 'both' => 'Both'],
+            default: 'both',
+        );
     }
 }
