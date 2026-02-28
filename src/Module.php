@@ -2,7 +2,7 @@
 
 namespace Noo\CraftRemoteSync;
 
-use craft\base\Module as BaseModule;
+use yii\base\Module as BaseModule;
 use Noo\CraftRemoteSync\services\RemoteSyncService;
 
 class Module extends BaseModule
