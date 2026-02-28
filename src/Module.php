@@ -2,19 +2,17 @@
 
 namespace jorge\craftremotesync;
 
-use craft\base\Plugin as BasePlugin;
+use craft\base\Module as BaseModule;
 use jorge\craftremotesync\services\RemoteSyncService;
 
-class Plugin extends BasePlugin
+class Module extends BaseModule
 {
-    public static Plugin $plugin;
-
-    public string $schemaVersion = '1.0.0';
+    public static Module $instance;
 
     public function init(): void
     {
         parent::init();
-        self::$plugin = $this;
+        self::$instance = $this;
 
         $this->setComponents([
             'remoteSyncService' => RemoteSyncService::class,

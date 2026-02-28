@@ -1,7 +1,7 @@
 {
     "name": "jorisnoo/craft-remote-sync",
     "description": "Sync databases and storage files between remote and local Craft CMS environments",
-    "type": "craft-plugin",
+    "type": "library",
     "license": "MIT",
     "keywords": [
         "craft",
@@ -50,16 +50,8 @@
         "sort-packages": true,
         "allow-plugins": {
             "pestphp/pest-plugin": true,
-            "yiisoft/yii2-composer": true,
-            "craftcms/plugin-installer": true
+            "yiisoft/yii2-composer": true
         }
-    },
-    "extra": {
-        "name": "Remote Sync",
-        "handle": "remote-sync",
-        "hasCpSettings": false,
-        "hasCpSection": false,
-        "class": "jorge\\craftremotesync\\Plugin"
     },
     "minimum-stability": "dev",
     "prefer-stable": true
