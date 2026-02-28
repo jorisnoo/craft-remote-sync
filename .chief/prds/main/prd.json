@@ -81,7 +81,7 @@
         "`generateBackupName(): string` — creates a timestamped backup name"
       ],
       "priority": 4,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-006",

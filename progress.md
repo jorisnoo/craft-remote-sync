@@ -53,3 +53,17 @@
   - Non-capturing catch `catch (\RuntimeException)` (no variable) works in PHP 8.0+
   - US-004 was implemented alongside US-003 since it's a direct prerequisite (RemoteConfig is the return type of service methods)
 ---
+
+## 2026-02-28 - US-005
+- What was implemented: `InteractsWithRemote` PHP trait for Craft console commands with remote selection, guards, confirmation prompts, and preview output
+- Files changed: `src/console/traits/InteractsWithRemote.php` (new)
+- **Learnings for future iterations:**
+  - Trait placed in `src/console/traits/` — namespace `jorge\craftremotesync\console\traits`
+  - Trait uses `$this->stdout()`, `$this->stderr()`, `$this->prompt()` — provided by `yii\console\Controller` which Craft console commands extend
+  - Guard methods (`ensureNotProduction`, `ensurePushAllowed`) call `exit(1)` after `$this->stderr()` since they are `void` and must abort execution
+  - `selectedRemote` protected property stores the current remote so `displayDatabasePreview()` doesn't need parameters
+  - `selectRemote()` supports both name-based and numeric index selection when multiple remotes are configured
+  - `str_starts_with()` is PHP 8.0+ compatible — safe to use in this project
+  - `confirmPull()`/`confirmPush()` use `$this->prompt()` and check for literal string `"yes"` (not just a boolean confirm)
+  - `displayFilesPreview()` filters rsync output headers (`sending `, `receiving `, `sent `, `total size `) to count actual file lines
+---
