@@ -118,7 +118,7 @@
         "Handles errors gracefully"
       ],
       "priority": 6,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-008",

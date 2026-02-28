@@ -80,3 +80,16 @@
   - For files pull: do dry-run previews for all paths first, then single confirmation, then rsync each path in sequence
   - `match` expression is PHP 8.0+ compatible — safe to use in this project
 ---
+
+## 2026-02-28 - US-007
+- What was implemented: `craft remote-sync/push` console command for pushing local database and/or storage files to a remote environment
+- Files changed: `src/console/controllers/PushController.php` (new)
+- **Learnings for future iterations:**
+  - Push command mirrors pull command structure — same operation selection, same InteractsWithRemote trait usage
+  - Key difference: `ensurePushAllowed()` guard called before `initializeRemote()` so we fail fast before SSH checks
+  - Remote safety backup is created first (before uploading local backup), so remote db is protected even if upload/restore fails
+  - Push flow: remote safety backup → create local backup → upload to remote → restore on remote → cleanup both
+  - Unlike pull (which cleans up on error), push doesn't need to clean up on error since the remote still has its original safety backup
+  - `confirmPush()` shows extra "cannot be undone" warning; files push also uses `confirmPush()` for consistent extra-warning UX
+  - `rsyncDryRun(..., 'upload')` used for preview; `rsyncUpload()` used for actual sync
+---
