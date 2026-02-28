@@ -5,11 +5,11 @@ namespace jorge\craftremotesync\models;
 class RemoteConfig
 {
     public function __construct(
-        public string $name,
-        public string $host,
-        public string $path,
-        public bool $pushAllowed = false,
-        public bool $isAtomic = false,
+        public readonly string $name,
+        public readonly string $host,
+        public readonly string $path,
+        public readonly bool $pushAllowed = false,
+        public readonly bool $isAtomic = false,
     ) {}
 
     public function workingPath(): string
@@ -24,8 +24,12 @@ class RemoteConfig
 
     public function withAtomic(bool $isAtomic): self
     {
-        $clone = clone $this;
-        $clone->isAtomic = $isAtomic;
-        return $clone;
+        return new self(
+            name: $this->name,
+            host: $this->host,
+            path: $this->path,
+            pushAllowed: $this->pushAllowed,
+            isAtomic: $isAtomic,
+        );
     }
 }
