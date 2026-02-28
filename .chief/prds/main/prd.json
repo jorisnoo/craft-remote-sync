@@ -51,7 +51,7 @@
         "Supports atomic deployment detection (checks for `/current` symlink on remote)"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-004",
@@ -63,7 +63,7 @@
         "`storagePath()` method returns `workingPath()/storage`"
       ],
       "priority": 3,
-      "passes": false
+      "passes": true
     },
     {
       "id": "US-005",
