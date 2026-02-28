@@ -35,8 +35,7 @@ class PushController extends Controller
 
         intro('Remote Sync — Push');
 
-        $remote = $this->selectRemote();
-        $this->ensurePushAllowed($remote);
+        $remote = $this->selectPushRemote();
         $remote = spin(fn() => $this->initializeRemote($remote), 'Checking remote configuration...');
 
         if ($remote->isAtomic) {
