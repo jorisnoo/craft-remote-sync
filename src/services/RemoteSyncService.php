@@ -48,7 +48,7 @@ class RemoteSyncService extends Component
     private function buildRsyncArgs(RemoteConfig $remote, string $source, string $dest, bool $dryRun = false, array $excludePaths = []): array
     {
         $parsed = $this->parseSshHost($remote->host);
-        $args = ['rsync', '-avz', '--progress', '--exclude=.*'];
+        $args = ['rsync', '-avz', '--exclude=.*'];
 
         foreach ($excludePaths as $path) {
             $args[] = '--exclude=' . $path;
@@ -207,7 +207,7 @@ class RemoteSyncService extends Component
         $this->runSshCommand($remote, $command, 30);
     }
 
-    public function rsyncDownload(RemoteConfig $remote, string $storagePath): void
+    public function rsyncDownload(RemoteConfig $remote, string $storagePath): string
     {
         $remoteHost = $this->getSshHost($remote);
         $remotePath = $remote->storagePath() . '/' . $storagePath . '/';
@@ -215,10 +215,10 @@ class RemoteSyncService extends Component
         $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
         $args = $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath, false, $excludePaths);
-        $this->runProcess($args, $this->getTimeout('fileSync'));
+        return $this->runProcess($args, $this->getTimeout('fileSync'));
     }
 
-    public function rsyncUpload(RemoteConfig $remote, string $storagePath): void
+    public function rsyncUpload(RemoteConfig $remote, string $storagePath): string
     {
         $remoteHost = $this->getSshHost($remote);
         $localPath = \Craft::$app->getPath()->getStoragePath() . DIRECTORY_SEPARATOR . $storagePath . DIRECTORY_SEPARATOR;
@@ -226,7 +226,7 @@ class RemoteSyncService extends Component
         $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
         $args = $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath, false, $excludePaths);
-        $this->runProcess($args, $this->getTimeout('fileSync'));
+        return $this->runProcess($args, $this->getTimeout('fileSync'));
     }
 
     public function rsyncDryRun(RemoteConfig $remote, string $storagePath, string $direction): string
