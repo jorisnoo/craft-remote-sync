@@ -68,7 +68,7 @@ class PushController extends Controller
 
         $this->displayDatabasePreview();
 
-        if (!$this->confirmPush()) {
+        if (!$this->confirmDbPush()) {
             info('Aborted.');
             return 0;
         }
@@ -134,7 +134,7 @@ class PushController extends Controller
             }
         }
 
-        if (!$this->confirmPush()) {
+        if (!$this->confirmFilesPush()) {
             info('Aborted.');
             return 0;
         }
