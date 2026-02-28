@@ -68,7 +68,7 @@ class PullController extends Controller
 
         $this->displayDatabasePreview();
 
-        if (!$this->confirmPull()) {
+        if (!$this->confirmDbPull()) {
             info('Aborted.');
             return 0;
         }
@@ -143,7 +143,7 @@ class PullController extends Controller
             }
         }
 
-        if (!$this->confirmPull()) {
+        if (!$this->confirmFilesPull()) {
             info('Aborted.');
             return 0;
         }

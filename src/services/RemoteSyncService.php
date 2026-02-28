@@ -45,10 +45,14 @@ class RemoteSyncService extends Component
         return $args;
     }
 
-    private function buildRsyncArgs(RemoteConfig $remote, string $source, string $dest, bool $dryRun = false): array
+    private function buildRsyncArgs(RemoteConfig $remote, string $source, string $dest, bool $dryRun = false, array $excludePaths = []): array
     {
         $parsed = $this->parseSshHost($remote->host);
-        $args = ['rsync', '-avz', '--progress'];
+        $args = ['rsync', '-avz', '--progress', '--exclude=.*'];
+
+        foreach ($excludePaths as $path) {
+            $args[] = '--exclude=' . $path;
+        }
 
         if ($parsed['port'] !== null) {
             $args[] = '-e';
@@ -208,8 +212,9 @@ class RemoteSyncService extends Component
         $remoteHost = $this->getSshHost($remote);
         $remotePath = $remote->storagePath() . '/' . $storagePath . '/';
         $localPath = \Craft::$app->getPath()->getStoragePath() . DIRECTORY_SEPARATOR . $storagePath . DIRECTORY_SEPARATOR;
+        $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
-        $args = $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath);
+        $args = $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath, false, $excludePaths);
         $this->runProcess($args, $this->getTimeout('fileSync'));
     }
 
@@ -218,8 +223,9 @@ class RemoteSyncService extends Component
         $remoteHost = $this->getSshHost($remote);
         $localPath = \Craft::$app->getPath()->getStoragePath() . DIRECTORY_SEPARATOR . $storagePath . DIRECTORY_SEPARATOR;
         $remotePath = $remote->storagePath() . '/' . $storagePath . '/';
+        $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
-        $args = $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath);
+        $args = $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath, false, $excludePaths);
         $this->runProcess($args, $this->getTimeout('fileSync'));
     }
 
@@ -228,10 +234,11 @@ class RemoteSyncService extends Component
         $remoteHost = $this->getSshHost($remote);
         $remotePath = $remote->storagePath() . '/' . $storagePath . '/';
         $localPath = \Craft::$app->getPath()->getStoragePath() . DIRECTORY_SEPARATOR . $storagePath . DIRECTORY_SEPARATOR;
+        $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
         $args = match ($direction) {
-            'download' => $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath, true),
-            'upload'   => $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath, true),
+            'download' => $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath, true, $excludePaths),
+            'upload'   => $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath, true, $excludePaths),
             default    => throw new \InvalidArgumentException("Direction must be 'download' or 'upload'."),
         };
 

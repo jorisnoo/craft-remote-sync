@@ -88,15 +88,27 @@ trait InteractsWithRemote
         }
     }
 
-    public function confirmPull(): bool
+    public function confirmDbPull(): bool
     {
         warning('This will overwrite your LOCAL database with data from the remote.');
         return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, pull from remote', no: 'No, abort');
     }
 
-    public function confirmPush(): bool
+    public function confirmDbPush(): bool
     {
         warning('This will overwrite the REMOTE database with your local data. This action is destructive and cannot be easily undone.');
+        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, push to remote', no: 'No, abort');
+    }
+
+    public function confirmFilesPull(): bool
+    {
+        warning('This will overwrite your LOCAL files with files from the remote.');
+        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, pull from remote', no: 'No, abort');
+    }
+
+    public function confirmFilesPush(): bool
+    {
+        warning('This will overwrite the REMOTE files with your local files. This action is destructive and cannot be easily undone.');
         return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, push to remote', no: 'No, abort');
     }
 
@@ -153,7 +165,7 @@ trait InteractsWithRemote
     {
         return select(
             label: "What would you like to {$direction}?",
-            options: ['database' => 'Database only', 'files' => 'Files only', 'both' => 'Both'],
+            options: ['database' => 'Database', 'files' => 'Files', 'both' => 'Both'],
             default: 'both',
         );
     }
