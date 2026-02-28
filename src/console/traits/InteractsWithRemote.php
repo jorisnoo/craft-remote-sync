@@ -29,6 +29,7 @@ trait InteractsWithRemote
 
         if (count($remotes) === 1) {
             $this->selectedRemote = $service->getRemote($remotes[0]);
+            info('Remote: ' . $remotes[0]);
             return $this->selectedRemote;
         }
 
@@ -51,6 +52,7 @@ trait InteractsWithRemote
 
         if (count($remotes) === 1) {
             $this->selectedRemote = $service->getRemote($remotes[0]);
+            info('Remote: ' . $remotes[0]);
             return $this->selectedRemote;
         }
 
