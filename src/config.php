@@ -66,6 +66,7 @@ return [
     */
 
     'exclude_paths' => [
+        'craft-transforms',
         // 'cache',
         // '*.log',
         // 'temp/**',
