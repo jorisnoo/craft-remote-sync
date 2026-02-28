@@ -2,6 +2,10 @@
 
 A Craft CMS module that syncs databases and storage files between remote and local environments over SSH/rsync.
 
+![Craft CMS 5](https://img.shields.io/badge/Craft%20CMS-5.x-e5422b.svg)
+![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777bb3.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
 ---
 
 ## Features
