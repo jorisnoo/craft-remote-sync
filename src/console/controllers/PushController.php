@@ -143,8 +143,8 @@ class PushController extends Controller
 
         foreach ($paths as $storagePath) {
             try {
-                $output = spin(fn() => $service->rsyncUpload($remote, $storagePath), "Syncing '{$storagePath}'...");
-                $this->displaySyncOutput($output);
+                info("Syncing '{$storagePath}'...");
+                $service->rsyncUpload($remote, $storagePath);
             } catch (\RuntimeException $e) {
                 error("Error syncing '{$storagePath}': " . $e->getMessage());
                 return 1;

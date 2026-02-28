@@ -96,6 +96,20 @@ class RemoteSyncService extends Component
         return $process->getOutput();
     }
 
+    private function runProcessStreaming(array $args, int $timeout): void
+    {
+        $process = new Process($args);
+        $process->setTimeout($timeout);
+        $process->run(function ($type, $buffer) {
+            if ($type === Process::OUT) {
+                fwrite(STDOUT, $buffer);
+            }
+        });
+        if (!$process->isSuccessful()) {
+            throw new \RuntimeException('Process failed: ' . $process->getErrorOutput());
+        }
+    }
+
     private function parseBackupFilename(string $output): string
     {
         // Craft outputs the backup path, e.g.: "Backed up the database to: /path/storage/backups/cp-backup-….sql.gz"
@@ -207,7 +221,7 @@ class RemoteSyncService extends Component
         $this->runSshCommand($remote, $command, 30);
     }
 
-    public function rsyncDownload(RemoteConfig $remote, string $storagePath): string
+    public function rsyncDownload(RemoteConfig $remote, string $storagePath): void
     {
         $remoteHost = $this->getSshHost($remote);
         $remotePath = $remote->storagePath() . '/' . $storagePath . '/';
@@ -215,10 +229,10 @@ class RemoteSyncService extends Component
         $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
         $args = $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath, false, $excludePaths);
-        return $this->runProcess($args, $this->getTimeout('fileSync'));
+        $this->runProcessStreaming($args, $this->getTimeout('fileSync'));
     }
 
-    public function rsyncUpload(RemoteConfig $remote, string $storagePath): string
+    public function rsyncUpload(RemoteConfig $remote, string $storagePath): void
     {
         $remoteHost = $this->getSshHost($remote);
         $localPath = \Craft::$app->getPath()->getStoragePath() . DIRECTORY_SEPARATOR . $storagePath . DIRECTORY_SEPARATOR;
@@ -226,7 +240,7 @@ class RemoteSyncService extends Component
         $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
         $args = $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath, false, $excludePaths);
-        return $this->runProcess($args, $this->getTimeout('fileSync'));
+        $this->runProcessStreaming($args, $this->getTimeout('fileSync'));
     }
 
     public function rsyncDryRun(RemoteConfig $remote, string $storagePath, string $direction): string
