@@ -1,9 +1,9 @@
 <?php
 
-namespace jorge\craftremotesync;
+namespace Noo\CraftRemoteSync;
 
 use craft\base\Module as BaseModule;
-use jorge\craftremotesync\services\RemoteSyncService;
+use Noo\CraftRemoteSync\services\RemoteSyncService;
 
 class Module extends BaseModule
 {

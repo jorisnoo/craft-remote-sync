@@ -35,12 +35,12 @@
     },
     "autoload": {
         "psr-4": {
-            "jorge\\craftremotesync\\": "src/"
+            "Noo\\CraftRemoteSync\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "jorge\\craftremotesync\\Tests\\": "tests/"
+            "Noo\\CraftRemoteSync\\Tests\\": "tests/"
         }
     },
     "scripts": {

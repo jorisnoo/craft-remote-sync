@@ -1,9 +1,9 @@
 <?php
 
-namespace jorge\craftremotesync\services;
+namespace Noo\CraftRemoteSync\services;
 
-use jorge\craftremotesync\models\RemoteConfig;
-use jorge\craftremotesync\Module;
+use Noo\CraftRemoteSync\models\RemoteConfig;
+use Noo\CraftRemoteSync\Module;
 use Symfony\Component\Process\Process;
 use yii\base\Component;
 
