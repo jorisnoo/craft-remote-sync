@@ -3,7 +3,7 @@
 namespace jorge\craftremotesync\services;
 
 use jorge\craftremotesync\models\RemoteConfig;
-use jorge\craftremotesync\Plugin;
+use jorge\craftremotesync\Module;
 use Symfony\Component\Process\Process;
 use yii\base\Component;
 
@@ -11,7 +11,7 @@ class RemoteSyncService extends Component
 {
     private function getConfig(): array
     {
-        return Plugin::$plugin->getConfig();
+        return Module::$instance->getConfig();
     }
 
     private function getTimeout(string $operation): int

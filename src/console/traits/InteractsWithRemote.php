@@ -3,7 +3,7 @@
 namespace jorge\craftremotesync\console\traits;
 
 use jorge\craftremotesync\models\RemoteConfig;
-use jorge\craftremotesync\Plugin;
+use jorge\craftremotesync\Module;
 
 trait InteractsWithRemote
 {
@@ -11,7 +11,7 @@ trait InteractsWithRemote
 
     public function selectRemote(): RemoteConfig
     {
-        $service = Plugin::$plugin->getRemoteSyncService();
+        $service = Module::$instance->getRemoteSyncService();
         $remotes = $service->getAvailableRemotes();
 
         if (empty($remotes)) {
@@ -48,7 +48,7 @@ trait InteractsWithRemote
     public function initializeRemote(RemoteConfig $remote): RemoteConfig
     {
         $this->stdout("Checking remote configuration...\n");
-        $service = Plugin::$plugin->getRemoteSyncService();
+        $service = Module::$instance->getRemoteSyncService();
         $isAtomic = $service->detectAtomicDeployment($remote);
 
         if ($isAtomic) {

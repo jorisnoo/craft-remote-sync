@@ -1,10 +1,6 @@
 # Remote Sync for Craft CMS
 
-A Craft CMS plugin that syncs databases and storage files between remote and local environments over SSH/rsync.
-
-![Craft CMS 5](https://img.shields.io/badge/Craft%20CMS-5.x-e5422b.svg)
-![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777bb3.svg)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+A Craft CMS module that syncs databases and storage files between remote and local environments over SSH/rsync.
 
 ---
 
@@ -37,15 +33,18 @@ A Craft CMS plugin that syncs databases and storage files between remote and loc
 composer require jorisnoo/craft-remote-sync
 ```
 
-Then enable the plugin in the Craft control panel under **Settings → Plugins**, or add it to your `config/app.php`:
+Then add it to your `config/app.php`:
 
 ```php
 return [
     'modules' => [
-        'remote-sync' => \jorge\craftremotesync\Plugin::class,
+        'remote-sync' => \jorge\craftremotesync\Module::class,
     ],
+    'bootstrap' => ['remote-sync'],
 ];
 ```
+
+The `bootstrap` entry is required so the module registers its console controllers on every request.
 
 ---
 
@@ -161,7 +160,7 @@ The command will:
 
 ## Safety
 
-Before any destructive database operation, the plugin automatically creates a backup of the database being overwritten:
+Before any destructive database operation, the module automatically creates a backup of the database being overwritten:
 
 - **Pull**: a local backup is created before the remote database is restored locally
 - **Push**: a remote backup is created before the local database is restored on the remote

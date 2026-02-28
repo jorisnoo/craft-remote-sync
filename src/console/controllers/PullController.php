@@ -5,7 +5,7 @@ namespace jorge\craftremotesync\console\controllers;
 use craft\console\Controller;
 use jorge\craftremotesync\console\traits\InteractsWithRemote;
 use jorge\craftremotesync\models\RemoteConfig;
-use jorge\craftremotesync\Plugin;
+use jorge\craftremotesync\Module;
 
 /**
  * Remote Sync Pull command.
@@ -66,7 +66,7 @@ class PullController extends Controller
 
     private function pullDatabase(RemoteConfig $remote): int
     {
-        $service = Plugin::$plugin->getRemoteSyncService();
+        $service = Module::$instance->getRemoteSyncService();
 
         $this->displayDatabasePreview();
 
@@ -136,8 +136,8 @@ class PullController extends Controller
 
     private function pullFiles(RemoteConfig $remote): int
     {
-        $service = Plugin::$plugin->getRemoteSyncService();
-        $config = Plugin::$plugin->getConfig();
+        $service = Module::$instance->getRemoteSyncService();
+        $config = Module::$instance->getConfig();
         $paths = $config['paths'] ?? [];
 
         if (empty($paths)) {
