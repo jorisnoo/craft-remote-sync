@@ -141,6 +141,14 @@ class RemoteSyncService extends Component
         }
     }
 
+    public function createLocalBackup(): string
+    {
+        $craftPath = \Craft::getAlias('@root') . DIRECTORY_SEPARATOR . 'craft';
+        $args = [PHP_BINARY, $craftPath, 'db/backup', '--zip'];
+        $output = $this->runProcess($args, $this->getTimeout('createSnapshot'));
+        return $this->parseBackupFilename($output);
+    }
+
     public function createRemoteBackup(RemoteConfig $remote): string
     {
         $command = 'cd ' . escapeshellarg($remote->workingPath()) . ' && php craft db/backup --zip 2>&1';

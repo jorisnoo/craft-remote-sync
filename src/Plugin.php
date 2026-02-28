@@ -19,6 +19,10 @@ class Plugin extends BasePlugin
         $this->setComponents([
             'remoteSyncService' => RemoteSyncService::class,
         ]);
+
+        if (\Craft::$app->request->isConsoleRequest) {
+            $this->controllerNamespace = 'jorge\\craftremotesync\\console\\controllers';
+        }
     }
 
     public function getRemoteSyncService(): RemoteSyncService
