@@ -78,7 +78,7 @@ return [
      *
      *   host        — SSH connection string, optionally with port (user@host or user@host:port)
      *   path        — Absolute path to the Craft application root on the remote server.
-     *                 For atomic deployments, point to the release parent — the plugin will
+     *                 For atomic deployments, point to the release parent — the module will
      *                 automatically append /current when isAtomic is detected.
      *   pushAllowed — Set to true to permit pushing to this remote. Defaults to false.
      */
