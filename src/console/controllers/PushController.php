@@ -26,6 +26,8 @@ class PushController extends Controller
 
     public $defaultAction = 'index';
 
+    private const EXIT_ABORTED = 2;
+
     /**
      * Push database and/or storage files from local to a remote environment.
      */
@@ -47,7 +49,7 @@ class PushController extends Controller
         if ($operation === 'database' || $operation === 'both') {
             $result = $this->pushDatabase($remote);
             if ($result !== 0) {
-                return $result;
+                return $result === self::EXIT_ABORTED ? 0 : $result;
             }
         }
 
@@ -70,7 +72,7 @@ class PushController extends Controller
 
         if (!$this->confirmDbPush()) {
             info('Aborted.');
-            return 0;
+            return self::EXIT_ABORTED;
         }
 
         // Create a remote backup as a safety net before overwriting the remote database

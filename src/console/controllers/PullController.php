@@ -26,6 +26,8 @@ class PullController extends Controller
 
     public $defaultAction = 'index';
 
+    private const EXIT_ABORTED = 2;
+
     /**
      * Pull database and/or storage files from a remote environment to local.
      */
@@ -47,7 +49,7 @@ class PullController extends Controller
         if ($operation === 'database' || $operation === 'both') {
             $result = $this->pullDatabase($remote);
             if ($result !== 0) {
-                return $result;
+                return $result === self::EXIT_ABORTED ? 0 : $result;
             }
         }
 
@@ -70,7 +72,7 @@ class PullController extends Controller
 
         if (!$this->confirmDbPull()) {
             info('Aborted.');
-            return 0;
+            return self::EXIT_ABORTED;
         }
 
         // Create local backup as a safety net before any destructive operation
