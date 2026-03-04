@@ -13,6 +13,7 @@ use function Laravel\Prompts\intro;
 use function Laravel\Prompts\note;
 use function Laravel\Prompts\outro;
 use function Laravel\Prompts\spin;
+use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\warning;
 
 /**
@@ -75,12 +76,21 @@ class PushController extends Controller
             return self::EXIT_ABORTED;
         }
 
-        // Create a remote backup as a safety net before overwriting the remote database
-        try {
-            $remoteSafetyBackup = spin(fn() => $service->createRemoteBackup($remote), 'Creating remote safety backup...');
-            info("Remote safety backup: {$remoteSafetyBackup}");
-        } catch (\RuntimeException $e) {
-            warning("Could not create remote safety backup: " . $e->getMessage());
+        $createBackup = confirm(
+            label: 'Create a remote backup before pushing?',
+            default: true,
+            yes: 'Yes',
+            no: 'No, skip backup',
+        );
+
+        if ($createBackup) {
+            // Create a remote backup as a safety net before overwriting the remote database
+            try {
+                $remoteSafetyBackup = spin(fn() => $service->createRemoteBackup($remote), 'Creating remote safety backup...');
+                info("Remote safety backup: {$remoteSafetyBackup}");
+            } catch (\RuntimeException $e) {
+                warning("Could not create remote safety backup: " . $e->getMessage());
+            }
         }
 
         $localFilename = null;
