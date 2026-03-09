@@ -27,14 +27,8 @@ trait InteractsWithRemote
             exit(1);
         }
 
-        if (count($remotes) === 1) {
-            $this->selectedRemote = $service->getRemote($remotes[0]);
-            info('Remote: ' . $remotes[0]);
-            return $this->selectedRemote;
-        }
-
         $options = array_combine($remotes, $remotes);
-        $name = select(label: 'Select a remote', options: $options, default: $remotes[0]);
+        $name = select(label: 'Select a remote', options: $options);
 
         $this->selectedRemote = $service->getRemote($name);
         return $this->selectedRemote;
@@ -50,14 +44,8 @@ trait InteractsWithRemote
             exit(1);
         }
 
-        if (count($remotes) === 1) {
-            $this->selectedRemote = $service->getRemote($remotes[0]);
-            info('Remote: ' . $remotes[0]);
-            return $this->selectedRemote;
-        }
-
         $options = array_combine($remotes, $remotes);
-        $name = select(label: 'Select a remote to push to', options: $options, default: $remotes[0]);
+        $name = select(label: 'Select a remote to push to', options: $options);
 
         $this->selectedRemote = $service->getRemote($name);
         return $this->selectedRemote;
