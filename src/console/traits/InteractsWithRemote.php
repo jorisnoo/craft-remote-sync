@@ -99,19 +99,19 @@ trait InteractsWithRemote
     public function confirmDbPush(): bool
     {
         warning('This will overwrite the REMOTE database with your local data. This action is destructive and cannot be easily undone.');
-        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, push to remote', no: 'No, abort');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, push to {$this->selectedRemote->name}", no: 'No, abort');
     }
 
     public function confirmFilesPull(): bool
     {
         warning('This will overwrite your LOCAL files with files from the remote.');
-        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, pull from remote', no: 'No, abort');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, pull from {$this->selectedRemote->name}", no: 'No, abort');
     }
 
     public function confirmFilesPush(): bool
     {
         warning('This will overwrite the REMOTE files with your local files. This action is destructive and cannot be easily undone.');
-        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, push to remote', no: 'No, abort');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, push to {$this->selectedRemote->name}", no: 'No, abort');
     }
 
     public function displayDatabasePreview(): void
