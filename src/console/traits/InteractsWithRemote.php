@@ -20,7 +20,10 @@ trait InteractsWithRemote
     public function selectRemote(): RemoteConfig
     {
         $service = Module::$instance->getRemoteSyncService();
-        $remotes = $service->getAvailableRemotes();
+        $remotes = array_values(array_filter(
+            $service->getAvailableRemotes(),
+            fn($name) => $name !== \Craft::$app->env,
+        ));
 
         if (empty($remotes)) {
             error("No remotes are configured in config/remote-sync.php");
@@ -37,7 +40,10 @@ trait InteractsWithRemote
     public function selectPushRemote(): RemoteConfig
     {
         $service = Module::$instance->getRemoteSyncService();
-        $remotes = $service->getAvailablePushRemotes();
+        $remotes = array_values(array_filter(
+            $service->getAvailablePushRemotes(),
+            fn($name) => $name !== \Craft::$app->env,
+        ));
 
         if (empty($remotes)) {
             error("No remotes are configured with push enabled. Set 'pushAllowed' => true in config/remote-sync.php");
