@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [1.1.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.0) (2026-03-09)
+
+### Features
+
+- show selected remote name in confirmation prompts ([3457d3a](https://github.com/jorisnoo/craft-remote-sync/commit/3457d3a64711ff412894db9332805c0ca6919b83))
+- add confirmation prompt before creating remote backup on push ([2cc0d5f](https://github.com/jorisnoo/craft-remote-sync/commit/2cc0d5f658ea4a584a0d86b2d7153b45f79701a3))
+
+### Code Refactoring
+
+- always show remote selection prompt instead of auto-selecting single remote ([332a632](https://github.com/jorisnoo/craft-remote-sync/commit/332a63245c528c2a6aacdeefa965fd8a4fa65ae5))
 ## [1.0.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.0.0) (2026-02-28)
 
 ### Features
