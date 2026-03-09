@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [1.1.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.1) (2026-03-09)
+
+### Bug Fixes
+
+- set module basePath before parent initialization ([7c37738](https://github.com/jorisnoo/craft-remote-sync/commit/7c377387c79d4954051020798f7ec7fa383cef7a))
+- exclude current environment from remote selection options ([e821857](https://github.com/jorisnoo/craft-remote-sync/commit/e821857f5e1e8616d628205749cb77fb9b0daed3))
 ## [1.1.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.0) (2026-03-09)
 
 ### Features
