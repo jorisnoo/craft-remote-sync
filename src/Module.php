@@ -11,6 +11,8 @@ class Module extends BaseModule
 
     public function init(): void
     {
+        $this->basePath = __DIR__;
+
         parent::init();
         self::$instance = $this;
 
