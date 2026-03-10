@@ -180,14 +180,14 @@ class RemoteSyncService extends Component
         return $this->parseBackupFilename($output);
     }
 
-    public function downloadBackup(RemoteConfig $remote, string $filename): void
+    public function downloadBackup(RemoteConfig $remote, string $filename, ?callable $callback = null): void
     {
         $remoteHost = $this->getSshHost($remote);
         $remotePath = $remote->storagePath() . '/backups/' . $filename;
         $localPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $filename;
 
         $args = $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath);
-        $this->runProcess($args, $this->getTimeout('download'));
+        $this->runProcess($args, $this->getTimeout('download'), $callback);
     }
 
     public function uploadBackup(RemoteConfig $remote, string $filename): void

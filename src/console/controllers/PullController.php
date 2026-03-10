@@ -88,7 +88,12 @@ class PullController extends Controller
 
         try {
             $remoteFilename = spin(fn() => $service->createRemoteBackup($remote), 'Creating remote backup...');
-            spin(fn() => $service->downloadBackup($remote, $remoteFilename), 'Downloading backup...');
+            info('Downloading backup...');
+            $service->downloadBackup($remote, $remoteFilename, function ($type, $buffer) {
+                if ($type === \Symfony\Component\Process\Process::OUT) {
+                    fwrite(STDOUT, $buffer);
+                }
+            });
 
             $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $remoteFilename;
 
