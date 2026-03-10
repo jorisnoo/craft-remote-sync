@@ -80,8 +80,11 @@ trait InteractsWithRemote
     {
         $env = \Craft::$app->env;
         if ($env === 'production') {
-            error("This command cannot be run in a production environment.");
-            exit(1);
+            warning('You are running this command in a production environment.');
+            $confirmed = confirm(label: 'Are you sure you want to continue?', default: false);
+            if (!$confirmed) {
+                exit(1);
+            }
         }
     }
 
