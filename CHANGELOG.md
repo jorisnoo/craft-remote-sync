@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [1.1.2](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.2) (2026-03-10)
+
+### Features
+
+- allow production environment commands with user confirmation instead of blocking ([ce59938](https://github.com/jorisnoo/craft-remote-sync/commit/ce59938622585aba0f74c1452a959b3b010abc6f))
+- clean up remote backups on SIGINT interruption during push/pull operations ([7405004](https://github.com/jorisnoo/craft-remote-sync/commit/7405004d1a6eb14da5850d7667c2d064f2be3df6))
+- stream download backup output to stdout instead of using spinner ([346a6f2](https://github.com/jorisnoo/craft-remote-sync/commit/346a6f233f68f9bba4e5853cfaeaab9265cbb601))
+
+### Code Refactoring
+
+- extract verbose mode with streaming output support into InteractsWithRemote trait ([9a1ef01](https://github.com/jorisnoo/craft-remote-sync/commit/9a1ef011add35aa6d5b9750637e97999105ad2eb))
 ## [1.1.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.1) (2026-03-09)
 
 ### Bug Fixes
