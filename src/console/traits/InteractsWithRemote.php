@@ -22,6 +22,10 @@ trait InteractsWithRemote
 
     protected ?RemoteConfig $selectedRemote = null;
 
+    private ?string $pendingRemoteBackup = null;
+
+    private ?RemoteConfig $cleanupRemote = null;
+
     public function selectRemote(): RemoteConfig
     {
         $service = Module::$instance->getRemoteSyncService();
@@ -197,5 +201,46 @@ trait InteractsWithRemote
             options: ['database' => 'Database', 'files' => 'Files', 'both' => 'Both'],
             default: 'both',
         );
+    }
+
+    protected function registerRemoteCleanup(RemoteConfig $remote, string $filename): void
+    {
+        if (!function_exists('pcntl_signal')) {
+            return;
+        }
+
+        $this->cleanupRemote = $remote;
+        $this->pendingRemoteBackup = $filename;
+
+        pcntl_async_signals(true);
+        pcntl_signal(SIGINT, [$this, 'handleInterrupt']);
+    }
+
+    protected function clearRemoteCleanup(): void
+    {
+        $this->cleanupRemote = null;
+        $this->pendingRemoteBackup = null;
+
+        if (function_exists('pcntl_signal')) {
+            pcntl_signal(SIGINT, SIG_DFL);
+        }
+    }
+
+    public function handleInterrupt(): void
+    {
+        if ($this->cleanupRemote !== null && $this->pendingRemoteBackup !== null) {
+            $service = Module::$instance->getRemoteSyncService();
+
+            warning("\nInterrupted. Cleaning up remote backup...");
+
+            try {
+                $service->deleteRemoteBackup($this->cleanupRemote, $this->pendingRemoteBackup);
+                info("Removed remote backup: {$this->pendingRemoteBackup}");
+            } catch (\RuntimeException $e) {
+                warning("Could not clean up remote backup: " . $e->getMessage());
+            }
+        }
+
+        exit(1);
     }
 }

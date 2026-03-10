@@ -88,6 +88,7 @@ class PullController extends Controller
 
         try {
             $remoteFilename = $this->runStep('Creating remote backup...', fn() => $service->createRemoteBackup($remote, $callback));
+            $this->registerRemoteCleanup($remote, $remoteFilename);
             $this->runStep('Downloading backup...', fn() => $service->downloadBackup($remote, $remoteFilename, $callback));
 
             $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $remoteFilename;
@@ -99,6 +100,7 @@ class PullController extends Controller
             if ($remoteFilename !== null) {
                 try {
                     $this->runStep('Cleaning up remote backup...', fn() => $service->deleteRemoteBackup($remote, $remoteFilename));
+                    $this->clearRemoteCleanup();
                 } catch (\RuntimeException $cleanupError) {
                     warning("Could not clean up remote backup: " . $cleanupError->getMessage());
                 }
@@ -111,6 +113,7 @@ class PullController extends Controller
         if ($remoteFilename !== null) {
             try {
                 $this->runStep('Cleaning up remote backup...', fn() => $service->deleteRemoteBackup($remote, $remoteFilename));
+                $this->clearRemoteCleanup();
             } catch (\RuntimeException $e) {
                 warning("Could not clean up remote backup: " . $e->getMessage());
             }

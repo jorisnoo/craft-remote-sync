@@ -98,6 +98,7 @@ class PushController extends Controller
         try {
             $localFilename = $this->runStep('Creating local backup...', fn() => $service->createLocalBackup($callback));
             $this->runStep('Uploading backup...', fn() => $service->uploadBackup($remote, $localFilename, $callback));
+            $this->registerRemoteCleanup($remote, $localFilename);
             $this->runStep('Restoring database on remote...', fn() => $service->loadRemoteBackup($remote, $localFilename, $callback));
         } catch (\RuntimeException $e) {
             error("Error during database push: " . $e->getMessage());
@@ -108,6 +109,7 @@ class PushController extends Controller
         if ($localFilename !== null) {
             try {
                 $this->runStep('Cleaning up remote uploaded backup...', fn() => $service->deleteRemoteBackup($remote, $localFilename));
+                $this->clearRemoteCleanup();
             } catch (\RuntimeException $e) {
                 warning("Could not clean up remote backup: " . $e->getMessage());
             }
