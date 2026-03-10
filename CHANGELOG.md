@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.2.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.2.0) (2026-03-10)
+
+### Features
+
+- verify SSH host key before remote operations with interactive fingerprint acceptance ([b41fd85](https://github.com/jorisnoo/craft-remote-sync/commit/b41fd85655143af5dd9c00127a9156c5d1252330))
 ## [1.1.2](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.2) (2026-03-10)
 
 ### Features
