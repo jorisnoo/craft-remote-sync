@@ -12,7 +12,6 @@ use function Laravel\Prompts\info;
 use function Laravel\Prompts\intro;
 use function Laravel\Prompts\note;
 use function Laravel\Prompts\outro;
-use function Laravel\Prompts\spin;
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\warning;
 
@@ -39,7 +38,7 @@ class PushController extends Controller
         intro('Remote Sync — Push');
 
         $remote = $this->selectPushRemote();
-        $remote = spin(fn() => $this->initializeRemote($remote), 'Checking remote configuration...');
+        $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
 
         if ($remote->isAtomic) {
             info('Atomic deployment detected.');
@@ -68,6 +67,7 @@ class PushController extends Controller
     private function pushDatabase(RemoteConfig $remote): int
     {
         $service = Module::$instance->getRemoteSyncService();
+        $callback = $this->streamingCallback();
 
         $this->displayDatabasePreview();
 
@@ -86,7 +86,7 @@ class PushController extends Controller
         if ($createBackup) {
             // Create a remote backup as a safety net before overwriting the remote database
             try {
-                $remoteSafetyBackup = spin(fn() => $service->createRemoteBackup($remote), 'Creating remote safety backup...');
+                $remoteSafetyBackup = $this->runStep('Creating remote safety backup...', fn() => $service->createRemoteBackup($remote, $callback));
                 info("Remote safety backup: {$remoteSafetyBackup}");
             } catch (\RuntimeException $e) {
                 warning("Could not create remote safety backup: " . $e->getMessage());
@@ -96,9 +96,9 @@ class PushController extends Controller
         $localFilename = null;
 
         try {
-            $localFilename = spin(fn() => $service->createLocalBackup(), 'Creating local backup...');
-            spin(fn() => $service->uploadBackup($remote, $localFilename), 'Uploading backup...');
-            spin(fn() => $service->loadRemoteBackup($remote, $localFilename), 'Restoring database on remote...');
+            $localFilename = $this->runStep('Creating local backup...', fn() => $service->createLocalBackup($callback));
+            $this->runStep('Uploading backup...', fn() => $service->uploadBackup($remote, $localFilename, $callback));
+            $this->runStep('Restoring database on remote...', fn() => $service->loadRemoteBackup($remote, $localFilename, $callback));
         } catch (\RuntimeException $e) {
             error("Error during database push: " . $e->getMessage());
             return 1;
@@ -107,7 +107,7 @@ class PushController extends Controller
         // Clean up the uploaded backup on remote
         if ($localFilename !== null) {
             try {
-                spin(fn() => $service->deleteRemoteBackup($remote, $localFilename), 'Cleaning up remote uploaded backup...');
+                $this->runStep('Cleaning up remote uploaded backup...', fn() => $service->deleteRemoteBackup($remote, $localFilename));
             } catch (\RuntimeException $e) {
                 warning("Could not clean up remote backup: " . $e->getMessage());
             }
@@ -117,7 +117,7 @@ class PushController extends Controller
         if ($localFilename !== null) {
             $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $localFilename;
             if (file_exists($localBackupPath)) {
-                spin(fn() => @unlink($localBackupPath), 'Cleaning up local backup...');
+                $this->runStep('Cleaning up local backup...', fn() => @unlink($localBackupPath));
             }
         }
 
@@ -137,7 +137,7 @@ class PushController extends Controller
 
         foreach ($paths as $storagePath) {
             try {
-                $dryRunOutput = spin(fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'), "Previewing '{$storagePath}'...");
+                $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'));
                 note("Path: {$storagePath}");
                 $this->displayFilesPreview($dryRunOutput);
             } catch (\RuntimeException $e) {

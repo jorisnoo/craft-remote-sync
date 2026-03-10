@@ -5,16 +5,21 @@ namespace Noo\CraftRemoteSync\console\traits;
 use Noo\CraftRemoteSync\models\RemoteConfig;
 use Noo\CraftRemoteSync\Module;
 
+use Symfony\Component\Process\Process;
+
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
 use function Laravel\Prompts\note;
 use function Laravel\Prompts\select;
+use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
 use function Laravel\Prompts\warning;
 
 trait InteractsWithRemote
 {
+    public bool $verbose = false;
+
     protected ?RemoteConfig $selectedRemote = null;
 
     public function selectRemote(): RemoteConfig
@@ -155,6 +160,34 @@ trait InteractsWithRemote
     public function generateBackupName(): string
     {
         return 'remote-sync-' . date('Y-m-d-His') . '.sql.gz';
+    }
+
+    public function options($actionID): array
+    {
+        return array_merge(parent::options($actionID), ['verbose']);
+    }
+
+    public function streamingCallback(): ?callable
+    {
+        if (!$this->verbose) {
+            return null;
+        }
+
+        return function ($type, $buffer) {
+            if ($type === Process::OUT) {
+                fwrite(STDOUT, $buffer);
+            }
+        };
+    }
+
+    public function runStep(string $label, callable $fn): mixed
+    {
+        if ($this->verbose) {
+            info($label);
+            return $fn();
+        }
+
+        return spin($fn, $label);
     }
 
     protected function selectOperation(string $direction): string

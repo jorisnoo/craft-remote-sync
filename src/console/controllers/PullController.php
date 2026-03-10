@@ -12,7 +12,6 @@ use function Laravel\Prompts\info;
 use function Laravel\Prompts\intro;
 use function Laravel\Prompts\note;
 use function Laravel\Prompts\outro;
-use function Laravel\Prompts\spin;
 use function Laravel\Prompts\warning;
 
 /**
@@ -38,7 +37,7 @@ class PullController extends Controller
         intro('Remote Sync — Pull');
 
         $remote = $this->selectRemote();
-        $remote = spin(fn() => $this->initializeRemote($remote), 'Checking remote configuration...');
+        $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
 
         if ($remote->isAtomic) {
             info('Atomic deployment detected.');
@@ -67,6 +66,7 @@ class PullController extends Controller
     private function pullDatabase(RemoteConfig $remote): int
     {
         $service = Module::$instance->getRemoteSyncService();
+        $callback = $this->streamingCallback();
 
         $this->displayDatabasePreview();
 
@@ -77,7 +77,7 @@ class PullController extends Controller
 
         // Create local backup as a safety net before any destructive operation
         try {
-            $localSafetyBackup = spin(fn() => $service->createLocalBackup(), 'Creating local safety backup...');
+            $localSafetyBackup = $this->runStep('Creating local safety backup...', fn() => $service->createLocalBackup($callback));
             info("Local safety backup: {$localSafetyBackup}");
         } catch (\RuntimeException $e) {
             warning("Could not create local safety backup: " . $e->getMessage());
@@ -87,23 +87,18 @@ class PullController extends Controller
         $localBackupPath = null;
 
         try {
-            $remoteFilename = spin(fn() => $service->createRemoteBackup($remote), 'Creating remote backup...');
-            info('Downloading backup...');
-            $service->downloadBackup($remote, $remoteFilename, function ($type, $buffer) {
-                if ($type === \Symfony\Component\Process\Process::OUT) {
-                    fwrite(STDOUT, $buffer);
-                }
-            });
+            $remoteFilename = $this->runStep('Creating remote backup...', fn() => $service->createRemoteBackup($remote, $callback));
+            $this->runStep('Downloading backup...', fn() => $service->downloadBackup($remote, $remoteFilename, $callback));
 
             $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $remoteFilename;
 
-            spin(fn() => $service->restoreLocalBackup($localBackupPath), 'Restoring database...');
+            $this->runStep('Restoring database...', fn() => $service->restoreLocalBackup($localBackupPath, $callback));
         } catch (\RuntimeException $e) {
             error("Error during database pull: " . $e->getMessage());
 
             if ($remoteFilename !== null) {
                 try {
-                    spin(fn() => $service->deleteRemoteBackup($remote, $remoteFilename), 'Cleaning up remote backup...');
+                    $this->runStep('Cleaning up remote backup...', fn() => $service->deleteRemoteBackup($remote, $remoteFilename));
                 } catch (\RuntimeException $cleanupError) {
                     warning("Could not clean up remote backup: " . $cleanupError->getMessage());
                 }
@@ -115,14 +110,14 @@ class PullController extends Controller
         // Clean up the downloaded backup
         if ($remoteFilename !== null) {
             try {
-                spin(fn() => $service->deleteRemoteBackup($remote, $remoteFilename), 'Cleaning up remote backup...');
+                $this->runStep('Cleaning up remote backup...', fn() => $service->deleteRemoteBackup($remote, $remoteFilename));
             } catch (\RuntimeException $e) {
                 warning("Could not clean up remote backup: " . $e->getMessage());
             }
         }
 
         if ($localBackupPath !== null && file_exists($localBackupPath)) {
-            spin(fn() => @unlink($localBackupPath), 'Cleaning up local backup...');
+            $this->runStep('Cleaning up local backup...', fn() => @unlink($localBackupPath));
         }
 
         return 0;
@@ -141,7 +136,7 @@ class PullController extends Controller
 
         foreach ($paths as $storagePath) {
             try {
-                $dryRunOutput = spin(fn() => $service->rsyncDryRun($remote, $storagePath, 'download'), "Previewing '{$storagePath}'...");
+                $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'download'));
                 note("Path: {$storagePath}");
                 $this->displayFilesPreview($dryRunOutput);
             } catch (\RuntimeException $e) {
