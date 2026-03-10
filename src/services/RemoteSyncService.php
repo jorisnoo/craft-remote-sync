@@ -153,6 +153,44 @@ class RemoteSyncService extends Component
         return array_keys(array_filter($remotes, fn($c) => (bool) ($c['pushAllowed'] ?? false)));
     }
 
+    public function verifySshHost(RemoteConfig $remote): void
+    {
+        $parsed = $this->parseSshHost($remote->host);
+        $args = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5'];
+        if ($parsed['port'] !== null) {
+            $args[] = '-p';
+            $args[] = (string) $parsed['port'];
+        }
+        $args[] = $parsed['host'];
+        $args[] = 'true';
+
+        $process = new Process($args);
+        $process->setTimeout(10);
+        $process->run();
+
+        if ($process->isSuccessful() || !str_contains($process->getErrorOutput(), 'Host key verification failed')) {
+            return;
+        }
+
+        // Host key not known yet — run interactively so user can accept the fingerprint
+        $args = ['ssh', '-o', 'ConnectTimeout=10'];
+        if ($parsed['port'] !== null) {
+            $args[] = '-p';
+            $args[] = (string) $parsed['port'];
+        }
+        $args[] = $parsed['host'];
+        $args[] = 'true';
+
+        $interactive = new Process($args);
+        $interactive->setTimeout(60);
+        $interactive->setTty(Process::isTtySupported());
+        $interactive->run();
+
+        if (!$interactive->isSuccessful()) {
+            throw new \RuntimeException('SSH host verification failed. The host key was not accepted.');
+        }
+    }
+
     public function detectAtomicDeployment(RemoteConfig $remote): bool
     {
         $command = '[ -L ' . escapeshellarg($remote->path . '/current') . ' ] && echo yes || echo no';

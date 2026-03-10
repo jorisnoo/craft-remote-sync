@@ -66,6 +66,11 @@ trait InteractsWithRemote
         return $this->selectedRemote;
     }
 
+    public function verifyHostConnection(RemoteConfig $remote): void
+    {
+        Module::$instance->getRemoteSyncService()->verifySshHost($remote);
+    }
+
     public function initializeRemote(RemoteConfig $remote): RemoteConfig
     {
         $service = Module::$instance->getRemoteSyncService();

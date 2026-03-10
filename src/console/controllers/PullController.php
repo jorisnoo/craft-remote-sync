@@ -37,6 +37,7 @@ class PullController extends Controller
         intro('Remote Sync — Pull');
 
         $remote = $this->selectRemote();
+        $this->verifyHostConnection($remote);
         $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
 
         if ($remote->isAtomic) {
