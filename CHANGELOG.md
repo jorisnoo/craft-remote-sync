@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.2.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.2.1) (2026-03-16)
+
+### Features
+
+- **pull:** require double confirmation for production operations ([9fcc723](https://github.com/jorisnoo/craft-remote-sync/commit/9fcc723bb27d87da04b29f00a57ed90e4e1b1f2b))
 ## [1.2.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.2.0) (2026-03-10)
 
 ### Features
