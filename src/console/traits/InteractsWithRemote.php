@@ -81,7 +81,7 @@ trait InteractsWithRemote
         return $remote;
     }
 
-    public function ensureNotProduction(): void
+    public function ensureNotProduction(bool $doubleConfirm = false): void
     {
         $env = \Craft::$app->env;
         if ($env === 'production') {
@@ -89,6 +89,13 @@ trait InteractsWithRemote
             $confirmed = confirm(label: 'Are you sure you want to continue?', default: false);
             if (!$confirmed) {
                 exit(1);
+            }
+
+            if ($doubleConfirm) {
+                $confirmed = confirm(label: 'This will modify your production environment. Are you REALLY sure?', default: false);
+                if (!$confirmed) {
+                    exit(1);
+                }
             }
         }
     }

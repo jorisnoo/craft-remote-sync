@@ -32,7 +32,7 @@ class PullController extends Controller
      */
     public function actionIndex(): int
     {
-        $this->ensureNotProduction();
+        $this->ensureNotProduction(doubleConfirm: true);
 
         intro('Remote Sync — Pull');
 
