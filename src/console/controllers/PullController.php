@@ -46,14 +46,46 @@ class PullController extends Controller
 
         $operation = $this->selectOperation('pull');
 
-        if ($operation === 'database' || $operation === 'both') {
+        if ($operation === 'both') {
+            $this->displayDatabasePreview();
+
+            $service = Module::$instance->getRemoteSyncService();
+            $paths = Module::$instance->getConfig()['paths'] ?? [];
+            foreach ($paths as $storagePath) {
+                try {
+                    $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'download'));
+                    note("Path: {$storagePath}");
+                    $this->displayFilesPreview($dryRunOutput);
+                } catch (\RuntimeException $e) {
+                    error("Could not run preview for '{$storagePath}': " . $e->getMessage());
+                    return 1;
+                }
+            }
+
+            if (!$this->confirmBothPull()) {
+                info('Aborted.');
+                return 0;
+            }
+
+            $result = $this->pullDatabase($remote, confirmed: true);
+            if ($result !== 0) {
+                return $result === self::EXIT_ABORTED ? 0 : $result;
+            }
+
+            $result = $this->pullFiles($remote, confirmed: true);
+            if ($result !== 0) {
+                return $result;
+            }
+        }
+
+        if ($operation === 'database') {
             $result = $this->pullDatabase($remote);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
         }
 
-        if ($operation === 'files' || $operation === 'both') {
+        if ($operation === 'files') {
             $result = $this->pullFiles($remote);
             if ($result !== 0) {
                 return $result;
@@ -64,16 +96,18 @@ class PullController extends Controller
         return 0;
     }
 
-    private function pullDatabase(RemoteConfig $remote): int
+    private function pullDatabase(RemoteConfig $remote, bool $confirmed = false): int
     {
         $service = Module::$instance->getRemoteSyncService();
         $callback = $this->streamingCallback();
 
-        $this->displayDatabasePreview();
+        if (!$confirmed) {
+            $this->displayDatabasePreview();
 
-        if (!$this->confirmDbPull()) {
-            info('Aborted.');
-            return self::EXIT_ABORTED;
+            if (!$this->confirmDbPull()) {
+                info('Aborted.');
+                return self::EXIT_ABORTED;
+            }
         }
 
         // Create local backup as a safety net before any destructive operation
@@ -127,7 +161,7 @@ class PullController extends Controller
         return 0;
     }
 
-    private function pullFiles(RemoteConfig $remote): int
+    private function pullFiles(RemoteConfig $remote, bool $confirmed = false): int
     {
         $service = Module::$instance->getRemoteSyncService();
         $config = Module::$instance->getConfig();
@@ -138,20 +172,22 @@ class PullController extends Controller
             return 0;
         }
 
-        foreach ($paths as $storagePath) {
-            try {
-                $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'download'));
-                note("Path: {$storagePath}");
-                $this->displayFilesPreview($dryRunOutput);
-            } catch (\RuntimeException $e) {
-                error("Could not run preview for '{$storagePath}': " . $e->getMessage());
-                return 1;
+        if (!$confirmed) {
+            foreach ($paths as $storagePath) {
+                try {
+                    $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'download'));
+                    note("Path: {$storagePath}");
+                    $this->displayFilesPreview($dryRunOutput);
+                } catch (\RuntimeException $e) {
+                    error("Could not run preview for '{$storagePath}': " . $e->getMessage());
+                    return 1;
+                }
             }
-        }
 
-        if (!$this->confirmFilesPull()) {
-            info('Aborted.');
-            return 0;
+            if (!$this->confirmFilesPull()) {
+                info('Aborted.');
+                return 0;
+            }
         }
 
         foreach ($paths as $storagePath) {

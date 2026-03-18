@@ -114,10 +114,22 @@ trait InteractsWithRemote
         return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, pull from remote', no: 'No, abort');
     }
 
+    public function confirmBothPush(): bool
+    {
+        warning('This will overwrite the REMOTE database and files with your local data. This action is destructive and cannot be easily undone.');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, push to {$this->selectedRemote->name}", no: 'No, abort');
+    }
+
     public function confirmDbPush(): bool
     {
         warning('This will overwrite the REMOTE database with your local data. This action is destructive and cannot be easily undone.');
         return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, push to {$this->selectedRemote->name}", no: 'No, abort');
+    }
+
+    public function confirmBothPull(): bool
+    {
+        warning('This will overwrite your LOCAL database and files with data from the remote.');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, pull from {$this->selectedRemote->name}", no: 'No, abort');
     }
 
     public function confirmFilesPull(): bool

@@ -47,14 +47,47 @@ class PushController extends Controller
 
         $operation = $this->selectOperation('push');
 
-        if ($operation === 'database' || $operation === 'both') {
+        if ($operation === 'both') {
+            $service = Module::$instance->getRemoteSyncService();
+
+            $this->displayDatabasePreview();
+
+            $paths = Module::$instance->getConfig()['paths'] ?? [];
+            foreach ($paths as $storagePath) {
+                try {
+                    $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'));
+                    note("Path: {$storagePath}");
+                    $this->displayFilesPreview($dryRunOutput);
+                } catch (\RuntimeException $e) {
+                    error("Could not run preview for '{$storagePath}': " . $e->getMessage());
+                    return 1;
+                }
+            }
+
+            if (!$this->confirmBothPush()) {
+                info('Aborted.');
+                return 0;
+            }
+
+            $result = $this->pushDatabase($remote, confirmed: true);
+            if ($result !== 0) {
+                return $result === self::EXIT_ABORTED ? 0 : $result;
+            }
+
+            $result = $this->pushFiles($remote, confirmed: true);
+            if ($result !== 0) {
+                return $result;
+            }
+        }
+
+        if ($operation === 'database') {
             $result = $this->pushDatabase($remote);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
         }
 
-        if ($operation === 'files' || $operation === 'both') {
+        if ($operation === 'files') {
             $result = $this->pushFiles($remote);
             if ($result !== 0) {
                 return $result;
@@ -65,16 +98,18 @@ class PushController extends Controller
         return 0;
     }
 
-    private function pushDatabase(RemoteConfig $remote): int
+    private function pushDatabase(RemoteConfig $remote, bool $confirmed = false): int
     {
         $service = Module::$instance->getRemoteSyncService();
         $callback = $this->streamingCallback();
 
-        $this->displayDatabasePreview();
+        if (!$confirmed) {
+            $this->displayDatabasePreview();
 
-        if (!$this->confirmDbPush()) {
-            info('Aborted.');
-            return self::EXIT_ABORTED;
+            if (!$this->confirmDbPush()) {
+                info('Aborted.');
+                return self::EXIT_ABORTED;
+            }
         }
 
         $createBackup = confirm(
@@ -127,7 +162,7 @@ class PushController extends Controller
         return 0;
     }
 
-    private function pushFiles(RemoteConfig $remote): int
+    private function pushFiles(RemoteConfig $remote, bool $confirmed = false): int
     {
         $service = Module::$instance->getRemoteSyncService();
         $config = Module::$instance->getConfig();
@@ -138,20 +173,22 @@ class PushController extends Controller
             return 0;
         }
 
-        foreach ($paths as $storagePath) {
-            try {
-                $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'));
-                note("Path: {$storagePath}");
-                $this->displayFilesPreview($dryRunOutput);
-            } catch (\RuntimeException $e) {
-                error("Could not run preview for '{$storagePath}': " . $e->getMessage());
-                return 1;
+        if (!$confirmed) {
+            foreach ($paths as $storagePath) {
+                try {
+                    $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'));
+                    note("Path: {$storagePath}");
+                    $this->displayFilesPreview($dryRunOutput);
+                } catch (\RuntimeException $e) {
+                    error("Could not run preview for '{$storagePath}': " . $e->getMessage());
+                    return 1;
+                }
             }
-        }
 
-        if (!$this->confirmFilesPush()) {
-            info('Aborted.');
-            return 0;
+            if (!$this->confirmFilesPush()) {
+                info('Aborted.');
+                return 0;
+            }
         }
 
         foreach ($paths as $storagePath) {
