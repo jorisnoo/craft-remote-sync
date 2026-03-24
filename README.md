@@ -162,6 +162,27 @@ The command will:
 
 ---
 
+## Versioning
+
+This module is maintained on separate branches for each major Craft CMS version:
+
+| Branch | Craft CMS | PHP |
+|---|---|---|
+| `main` | 5.x | 8.2+ |
+| `craft-4` | 4.x | 8.1+ |
+
+Install the version that matches your Craft installation:
+
+```bash
+# Craft 5
+composer require jorisnoo/craft-remote-sync
+
+# Craft 4
+composer require jorisnoo/craft-remote-sync:dev-craft-4
+```
+
+---
+
 ## Safety
 
 Before any destructive database operation, the module automatically creates a backup of the database being overwritten:
