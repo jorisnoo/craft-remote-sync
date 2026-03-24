@@ -1,2 +1,4 @@
 .chief/
 .idea/
+/vendor/
+composer.lock
