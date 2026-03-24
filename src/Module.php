@@ -28,11 +28,16 @@ class Module extends BaseModule
         return $this->get('remoteSyncService');
     }
 
+    private ?array $cachedConfig = null;
+
     public function getConfig(): array
     {
-        $fileConfig = \Craft::$app->getConfig()->getConfigFromFile('remote-sync');
-        $defaults = require __DIR__ . '/config.php';
+        if ($this->cachedConfig === null) {
+            $fileConfig = \Craft::$app->getConfig()->getConfigFromFile('remote-sync');
+            $defaults = require __DIR__ . '/config.php';
+            $this->cachedConfig = array_replace_recursive($defaults, $fileConfig);
+        }
 
-        return array_replace_recursive($defaults, $fileConfig);
+        return $this->cachedConfig;
     }
 }

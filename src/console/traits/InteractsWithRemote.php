@@ -5,36 +5,44 @@ namespace Noo\CraftRemoteSync\console\traits;
 use Noo\CraftRemoteSync\models\RemoteConfig;
 use Noo\CraftRemoteSync\Module;
 
+use Symfony\Component\Process\Process;
+
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
 use function Laravel\Prompts\note;
 use function Laravel\Prompts\select;
+use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
 use function Laravel\Prompts\warning;
 
 trait InteractsWithRemote
 {
+    protected const EXIT_ABORTED = 2;
+
+    public bool $verbose = false;
+
     protected ?RemoteConfig $selectedRemote = null;
+
+    private ?string $pendingRemoteBackup = null;
+
+    private ?RemoteConfig $cleanupRemote = null;
 
     public function selectRemote(): RemoteConfig
     {
         $service = Module::$instance->getRemoteSyncService();
-        $remotes = $service->getAvailableRemotes();
+        $remotes = array_values(array_filter(
+            $service->getAvailableRemotes(),
+            fn($name) => $name !== \Craft::$app->env,
+        ));
 
         if (empty($remotes)) {
             error("No remotes are configured in config/remote-sync.php");
             exit(1);
         }
 
-        if (count($remotes) === 1) {
-            $this->selectedRemote = $service->getRemote($remotes[0]);
-            info('Remote: ' . $remotes[0]);
-            return $this->selectedRemote;
-        }
-
         $options = array_combine($remotes, $remotes);
-        $name = select(label: 'Select a remote', options: $options, default: $remotes[0]);
+        $name = select(label: 'Select a remote', options: $options);
 
         $this->selectedRemote = $service->getRemote($name);
         return $this->selectedRemote;
@@ -43,24 +51,26 @@ trait InteractsWithRemote
     public function selectPushRemote(): RemoteConfig
     {
         $service = Module::$instance->getRemoteSyncService();
-        $remotes = $service->getAvailablePushRemotes();
+        $remotes = array_values(array_filter(
+            $service->getAvailablePushRemotes(),
+            fn($name) => $name !== \Craft::$app->env,
+        ));
 
         if (empty($remotes)) {
             error("No remotes are configured with push enabled. Set 'pushAllowed' => true in config/remote-sync.php");
             exit(1);
         }
 
-        if (count($remotes) === 1) {
-            $this->selectedRemote = $service->getRemote($remotes[0]);
-            info('Remote: ' . $remotes[0]);
-            return $this->selectedRemote;
-        }
-
         $options = array_combine($remotes, $remotes);
-        $name = select(label: 'Select a remote to push to', options: $options, default: $remotes[0]);
+        $name = select(label: 'Select a remote to push to', options: $options);
 
         $this->selectedRemote = $service->getRemote($name);
         return $this->selectedRemote;
+    }
+
+    public function verifyHostConnection(RemoteConfig $remote): void
+    {
+        Module::$instance->getRemoteSyncService()->verifySshHost($remote);
     }
 
     public function initializeRemote(RemoteConfig $remote): RemoteConfig
@@ -73,20 +83,22 @@ trait InteractsWithRemote
         return $remote;
     }
 
-    public function ensureNotProduction(): void
+    public function ensureNotProduction(bool $doubleConfirm = false): void
     {
         $env = \Craft::$app->env;
         if ($env === 'production') {
-            error("This command cannot be run in a production environment.");
-            exit(1);
-        }
-    }
+            warning('You are running this command in a production environment.');
+            $confirmed = confirm(label: 'Are you sure you want to continue?', default: false);
+            if (!$confirmed) {
+                exit(1);
+            }
 
-    public function ensurePushAllowed(RemoteConfig $remote): void
-    {
-        if (!$remote->pushAllowed) {
-            error("Push is not allowed for remote '{$remote->name}'. Set 'pushAllowed' => true in config/remote-sync.php");
-            exit(1);
+            if ($doubleConfirm) {
+                $confirmed = confirm(label: 'This will modify your production environment. Are you REALLY sure?', default: false);
+                if (!$confirmed) {
+                    exit(1);
+                }
+            }
         }
     }
 
@@ -96,22 +108,34 @@ trait InteractsWithRemote
         return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, pull from remote', no: 'No, abort');
     }
 
+    public function confirmBothPush(): bool
+    {
+        warning('This will overwrite the REMOTE database and files with your local data. This action is destructive and cannot be easily undone.');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, push to {$this->selectedRemote->name}", no: 'No, abort');
+    }
+
     public function confirmDbPush(): bool
     {
         warning('This will overwrite the REMOTE database with your local data. This action is destructive and cannot be easily undone.');
-        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, push to remote', no: 'No, abort');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, push to {$this->selectedRemote->name}", no: 'No, abort');
+    }
+
+    public function confirmBothPull(): bool
+    {
+        warning('This will overwrite your LOCAL database and files with data from the remote.');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, pull from {$this->selectedRemote->name}", no: 'No, abort');
     }
 
     public function confirmFilesPull(): bool
     {
         warning('This will overwrite your LOCAL files with files from the remote.');
-        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, pull from remote', no: 'No, abort');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, pull from {$this->selectedRemote->name}", no: 'No, abort');
     }
 
     public function confirmFilesPush(): bool
     {
         warning('This will overwrite the REMOTE files with your local files. This action is destructive and cannot be easily undone.');
-        return confirm(label: 'Do you want to continue?', default: false, yes: 'Yes, push to remote', no: 'No, abort');
+        return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, push to {$this->selectedRemote->name}", no: 'No, abort');
     }
 
     public function displayDatabasePreview(): void
@@ -126,6 +150,25 @@ trait InteractsWithRemote
             ['Host',   $remote->host],
             ['Path',   $remote->workingPath()],
         ]);
+    }
+
+    public function previewFiles(RemoteConfig $remote, string $direction): bool
+    {
+        $service = Module::$instance->getRemoteSyncService();
+        $paths = Module::$instance->getConfig()['paths'] ?? [];
+
+        foreach ($paths as $storagePath) {
+            try {
+                $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, $direction));
+                note("Path: {$storagePath}");
+                $this->displayFilesPreview($dryRunOutput);
+            } catch (\RuntimeException $e) {
+                error("Could not run preview for '{$storagePath}': " . $e->getMessage());
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public function displayFilesPreview(string $dryRunOutput): void
@@ -158,45 +201,32 @@ trait InteractsWithRemote
         }
     }
 
-    public function displaySyncOutput(string $output): void
+    public function options($actionID): array
     {
-        $lines = explode("\n", trim($output));
-        $files = [];
-
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (empty($line)) {
-                continue;
-            }
-            if (
-                str_starts_with($line, 'sending ') ||
-                str_starts_with($line, 'receiving ') ||
-                str_starts_with($line, 'sent ') ||
-                str_starts_with($line, 'total size ') ||
-                $line === './'
-            ) {
-                continue;
-            }
-            $files[] = $line;
-        }
-
-        if (empty($files)) {
-            info('Already up to date.');
-            return;
-        }
-
-        $count = count($files);
-        $display = array_slice($files, 0, 10);
-        table(headers: ['Synced files'], rows: array_map(fn($f) => [$f], $display));
-
-        if ($count > 10) {
-            note('... and ' . ($count - 10) . ' more file(s)');
-        }
+        return array_merge(parent::options($actionID), ['verbose']);
     }
 
-    public function generateBackupName(): string
+    public function streamingCallback(): ?callable
     {
-        return 'remote-sync-' . date('Y-m-d-His') . '.sql.gz';
+        if (!$this->verbose) {
+            return null;
+        }
+
+        return function ($type, $buffer) {
+            if ($type === Process::OUT) {
+                fwrite(STDOUT, $buffer);
+            }
+        };
+    }
+
+    public function runStep(string $label, callable $fn): mixed
+    {
+        if ($this->verbose) {
+            info($label);
+            return $fn();
+        }
+
+        return spin($fn, $label);
     }
 
     protected function selectOperation(string $direction): string
@@ -206,5 +236,46 @@ trait InteractsWithRemote
             options: ['database' => 'Database', 'files' => 'Files', 'both' => 'Both'],
             default: 'both',
         );
+    }
+
+    protected function registerRemoteCleanup(RemoteConfig $remote, string $filename): void
+    {
+        if (!function_exists('pcntl_signal')) {
+            return;
+        }
+
+        $this->cleanupRemote = $remote;
+        $this->pendingRemoteBackup = $filename;
+
+        pcntl_async_signals(true);
+        pcntl_signal(SIGINT, [$this, 'handleInterrupt']);
+    }
+
+    protected function clearRemoteCleanup(): void
+    {
+        $this->cleanupRemote = null;
+        $this->pendingRemoteBackup = null;
+
+        if (function_exists('pcntl_signal')) {
+            pcntl_signal(SIGINT, SIG_DFL);
+        }
+    }
+
+    public function handleInterrupt(): void
+    {
+        if ($this->cleanupRemote !== null && $this->pendingRemoteBackup !== null) {
+            $service = Module::$instance->getRemoteSyncService();
+
+            warning("\nInterrupted. Cleaning up remote backup...");
+
+            try {
+                $service->deleteRemoteBackup($this->cleanupRemote, $this->pendingRemoteBackup);
+                info("Removed remote backup: {$this->pendingRemoteBackup}");
+            } catch (\RuntimeException $e) {
+                warning("Could not clean up remote backup: " . $e->getMessage());
+            }
+        }
+
+        exit(1);
     }
 }

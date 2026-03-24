@@ -10,9 +10,7 @@ use Noo\CraftRemoteSync\Module;
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
 use function Laravel\Prompts\intro;
-use function Laravel\Prompts\note;
 use function Laravel\Prompts\outro;
-use function Laravel\Prompts\spin;
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\warning;
 
@@ -27,34 +25,84 @@ class PushController extends Controller
 
     public $defaultAction = 'index';
 
-    private const EXIT_ABORTED = 2;
+    public ?string $remoteHost = null;
+
+    public ?string $remotePath = null;
+
+    public bool $database = false;
+
+    public bool $files = false;
+
+    public bool $force = false;
+
+    public function options($actionID): array
+    {
+        return array_merge(parent::options($actionID), [
+            'verbose',
+            'remoteHost',
+            'remotePath',
+            'database',
+            'files',
+            'force',
+        ]);
+    }
 
     /**
      * Push database and/or storage files from local to a remote environment.
      */
     public function actionIndex(): int
     {
-        $this->ensureNotProduction();
-
         intro('Remote Sync — Push');
 
-        $remote = $this->selectPushRemote();
-        $remote = spin(fn() => $this->initializeRemote($remote), 'Checking remote configuration...');
+        if ($this->remoteHost && $this->remotePath) {
+            $remote = new RemoteConfig(
+                name: 'zentrale-sync',
+                host: $this->remoteHost,
+                path: $this->remotePath,
+                pushAllowed: true,
+            );
+        } else {
+            $remote = $this->selectPushRemote();
+        }
+
+        $this->verifyHostConnection($remote);
+        $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
 
         if ($remote->isAtomic) {
             info('Atomic deployment detected.');
         }
 
-        $operation = $this->selectOperation('push');
+        $operation = $this->resolveOperation();
 
-        if ($operation === 'database' || $operation === 'both') {
+        if ($operation === 'both') {
+            if (!$this->force) {
+                $this->displayDatabasePreview();
+
+                if (!$this->previewFiles($remote, 'upload')) {
+                    return 1;
+                }
+
+                if (!$this->confirmBothPush()) {
+                    info('Aborted.');
+                    return 0;
+                }
+            }
+
+            $result = $this->pushDatabase($remote, confirmed: true);
+            if ($result !== 0) {
+                return $result === self::EXIT_ABORTED ? 0 : $result;
+            }
+
+            $result = $this->pushFiles($remote, confirmed: true);
+            if ($result !== 0) {
+                return $result;
+            }
+        } elseif ($operation === 'database') {
             $result = $this->pushDatabase($remote);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
-        }
-
-        if ($operation === 'files' || $operation === 'both') {
+        } elseif ($operation === 'files') {
             $result = $this->pushFiles($remote);
             if ($result !== 0) {
                 return $result;
@@ -65,28 +113,49 @@ class PushController extends Controller
         return 0;
     }
 
-    private function pushDatabase(RemoteConfig $remote): int
+    private function resolveOperation(): string
     {
-        $service = Module::$instance->getRemoteSyncService();
-
-        $this->displayDatabasePreview();
-
-        if (!$this->confirmDbPush()) {
-            info('Aborted.');
-            return self::EXIT_ABORTED;
+        if ($this->database && $this->files) {
+            return 'both';
         }
 
-        $createBackup = confirm(
-            label: 'Create a remote backup before pushing?',
-            default: true,
-            yes: 'Yes',
-            no: 'No, skip backup',
-        );
+        if ($this->database) {
+            return 'database';
+        }
+
+        if ($this->files) {
+            return 'files';
+        }
+
+        return $this->selectOperation('push');
+    }
+
+    private function pushDatabase(RemoteConfig $remote, bool $confirmed = false): int
+    {
+        $service = Module::$instance->getRemoteSyncService();
+        $callback = $this->streamingCallback();
+
+        if (!$confirmed && !$this->force) {
+            $this->displayDatabasePreview();
+
+            if (!$this->confirmDbPush()) {
+                info('Aborted.');
+                return self::EXIT_ABORTED;
+            }
+        }
+
+        $createBackup = $this->force
+            ? true
+            : confirm(
+                label: 'Create a remote backup before pushing?',
+                default: true,
+                yes: 'Yes',
+                no: 'No, skip backup',
+            );
 
         if ($createBackup) {
-            // Create a remote backup as a safety net before overwriting the remote database
             try {
-                $remoteSafetyBackup = spin(fn() => $service->createRemoteBackup($remote), 'Creating remote safety backup...');
+                $remoteSafetyBackup = $this->runStep('Creating remote safety backup...', fn() => $service->createRemoteBackup($remote, $callback));
                 info("Remote safety backup: {$remoteSafetyBackup}");
             } catch (\RuntimeException $e) {
                 warning("Could not create remote safety backup: " . $e->getMessage());
@@ -96,35 +165,29 @@ class PushController extends Controller
         $localFilename = null;
 
         try {
-            $localFilename = spin(fn() => $service->createLocalBackup(), 'Creating local backup...');
-            spin(fn() => $service->uploadBackup($remote, $localFilename), 'Uploading backup...');
-            spin(fn() => $service->loadRemoteBackup($remote, $localFilename), 'Restoring database on remote...');
+            $localFilename = $this->runStep('Creating local backup...', fn() => $service->createLocalBackup($callback));
+            $this->runStep('Uploading backup...', fn() => $service->uploadBackup($remote, $localFilename, $callback));
+            $this->registerRemoteCleanup($remote, $localFilename);
+            $this->runStep('Restoring database on remote...', fn() => $service->loadRemoteBackup($remote, $localFilename, $callback));
         } catch (\RuntimeException $e) {
             error("Error during database push: " . $e->getMessage());
             return 1;
         }
 
-        // Clean up the uploaded backup on remote
-        if ($localFilename !== null) {
-            try {
-                spin(fn() => $service->deleteRemoteBackup($remote, $localFilename), 'Cleaning up remote uploaded backup...');
-            } catch (\RuntimeException $e) {
-                warning("Could not clean up remote backup: " . $e->getMessage());
-            }
+        try {
+            $this->runStep('Cleaning up remote uploaded backup...', fn() => $service->deleteRemoteBackup($remote, $localFilename));
+            $this->clearRemoteCleanup();
+        } catch (\RuntimeException $e) {
+            warning("Could not clean up remote backup: " . $e->getMessage());
         }
 
-        // Clean up the local backup
-        if ($localFilename !== null) {
-            $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $localFilename;
-            if (file_exists($localBackupPath)) {
-                spin(fn() => @unlink($localBackupPath), 'Cleaning up local backup...');
-            }
-        }
+        $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $localFilename;
+        $this->runStep('Cleaning up local backup...', fn() => @unlink($localBackupPath));
 
         return 0;
     }
 
-    private function pushFiles(RemoteConfig $remote): int
+    private function pushFiles(RemoteConfig $remote, bool $confirmed = false): int
     {
         $service = Module::$instance->getRemoteSyncService();
         $config = Module::$instance->getConfig();
@@ -135,26 +198,21 @@ class PushController extends Controller
             return 0;
         }
 
-        foreach ($paths as $storagePath) {
-            try {
-                $dryRunOutput = spin(fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'), "Previewing '{$storagePath}'...");
-                note("Path: {$storagePath}");
-                $this->displayFilesPreview($dryRunOutput);
-            } catch (\RuntimeException $e) {
-                error("Could not run preview for '{$storagePath}': " . $e->getMessage());
+        if (!$confirmed && !$this->force) {
+            if (!$this->previewFiles($remote, 'upload')) {
                 return 1;
+            }
+
+            if (!$this->confirmFilesPush()) {
+                info('Aborted.');
+                return 0;
             }
         }
 
-        if (!$this->confirmFilesPush()) {
-            info('Aborted.');
-            return 0;
-        }
-
         foreach ($paths as $storagePath) {
             try {
-                $output = spin(fn() => $service->rsyncUpload($remote, $storagePath), "Syncing '{$storagePath}'...");
-                $this->displaySyncOutput($output);
+                info("Syncing '{$storagePath}'...");
+                $service->rsyncUpload($remote, $storagePath);
             } catch (\RuntimeException $e) {
                 error("Error syncing '{$storagePath}': " . $e->getMessage());
                 return 1;

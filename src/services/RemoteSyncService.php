@@ -69,12 +69,12 @@ class RemoteSyncService extends Component
         return $args;
     }
 
-    private function runSshCommand(RemoteConfig $remote, string $command, int $timeout): string
+    private function runSshCommand(RemoteConfig $remote, string $command, int $timeout, ?callable $callback = null): string
     {
         $args = $this->buildSshArgs($remote, $command);
         $process = new Process($args);
         $process->setTimeout($timeout);
-        $process->run();
+        $process->run($callback);
 
         if (!$process->isSuccessful()) {
             throw new \RuntimeException('SSH command failed: ' . $process->getErrorOutput());
@@ -94,6 +94,20 @@ class RemoteSyncService extends Component
         }
 
         return $process->getOutput();
+    }
+
+    private function runProcessStreaming(array $args, int $timeout): void
+    {
+        $process = new Process($args);
+        $process->setTimeout($timeout);
+        $process->run(function ($type, $buffer) {
+            if ($type === Process::OUT) {
+                fwrite(STDOUT, $buffer);
+            }
+        });
+        if (!$process->isSuccessful()) {
+            throw new \RuntimeException('Process failed: ' . $process->getErrorOutput());
+        }
     }
 
     private function parseBackupFilename(string $output): string
@@ -139,6 +153,44 @@ class RemoteSyncService extends Component
         return array_keys(array_filter($remotes, fn($c) => (bool) ($c['pushAllowed'] ?? false)));
     }
 
+    public function verifySshHost(RemoteConfig $remote): void
+    {
+        $parsed = $this->parseSshHost($remote->host);
+        $args = ['ssh', '-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5'];
+        if ($parsed['port'] !== null) {
+            $args[] = '-p';
+            $args[] = (string) $parsed['port'];
+        }
+        $args[] = $parsed['host'];
+        $args[] = 'true';
+
+        $process = new Process($args);
+        $process->setTimeout(10);
+        $process->run();
+
+        if ($process->isSuccessful() || !str_contains($process->getErrorOutput(), 'Host key verification failed')) {
+            return;
+        }
+
+        // Host key not known yet — run interactively so user can accept the fingerprint
+        $args = ['ssh', '-o', 'ConnectTimeout=10'];
+        if ($parsed['port'] !== null) {
+            $args[] = '-p';
+            $args[] = (string) $parsed['port'];
+        }
+        $args[] = $parsed['host'];
+        $args[] = 'true';
+
+        $interactive = new Process($args);
+        $interactive->setTimeout(60);
+        $interactive->setTty(Process::isTtySupported());
+        $interactive->run();
+
+        if (!$interactive->isSuccessful()) {
+            throw new \RuntimeException('SSH host verification failed. The host key was not accepted.');
+        }
+    }
+
     public function detectAtomicDeployment(RemoteConfig $remote): bool
     {
         $command = '[ -L ' . escapeshellarg($remote->path . '/current') . ' ] && echo yes || echo no';
@@ -151,53 +203,53 @@ class RemoteSyncService extends Component
         }
     }
 
-    public function createLocalBackup(): string
+    public function createLocalBackup(?callable $callback = null): string
     {
         $craftPath = \Craft::getAlias('@root') . DIRECTORY_SEPARATOR . 'craft';
         $args = [PHP_BINARY, $craftPath, 'db/backup', '--zip'];
-        $output = $this->runProcess($args, $this->getTimeout('createSnapshot'));
+        $output = $this->runProcess($args, $this->getTimeout('createSnapshot'), $callback);
         return $this->parseBackupFilename($output);
     }
 
-    public function createRemoteBackup(RemoteConfig $remote): string
+    public function createRemoteBackup(RemoteConfig $remote, ?callable $callback = null): string
     {
         $command = 'cd ' . escapeshellarg($remote->workingPath()) . ' && php craft db/backup --zip 2>&1';
-        $output = $this->runSshCommand($remote, $command, $this->getTimeout('createSnapshot'));
+        $output = $this->runSshCommand($remote, $command, $this->getTimeout('createSnapshot'), $callback);
         return $this->parseBackupFilename($output);
     }
 
-    public function downloadBackup(RemoteConfig $remote, string $filename): void
+    public function downloadBackup(RemoteConfig $remote, string $filename, ?callable $callback = null): void
     {
         $remoteHost = $this->getSshHost($remote);
         $remotePath = $remote->storagePath() . '/backups/' . $filename;
         $localPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $filename;
 
         $args = $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath);
-        $this->runProcess($args, $this->getTimeout('download'));
+        $this->runProcess($args, $this->getTimeout('download'), $callback);
     }
 
-    public function uploadBackup(RemoteConfig $remote, string $filename): void
+    public function uploadBackup(RemoteConfig $remote, string $filename, ?callable $callback = null): void
     {
         $remoteHost = $this->getSshHost($remote);
         $localPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $filename;
         $remotePath = $remote->storagePath() . '/backups/' . $filename;
 
         $args = $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath);
-        $this->runProcess($args, $this->getTimeout('upload'));
+        $this->runProcess($args, $this->getTimeout('upload'), $callback);
     }
 
-    public function restoreLocalBackup(string $path): void
+    public function restoreLocalBackup(string $path, ?callable $callback = null): void
     {
         $craftPath = \Craft::getAlias('@root') . DIRECTORY_SEPARATOR . 'craft';
         $args = [PHP_BINARY, $craftPath, 'db/restore', $path, '--drop-all-tables'];
-        $this->runProcess($args, $this->getTimeout('download'));
+        $this->runProcess($args, $this->getTimeout('download'), $callback);
     }
 
-    public function loadRemoteBackup(RemoteConfig $remote, string $filename): void
+    public function loadRemoteBackup(RemoteConfig $remote, string $filename, ?callable $callback = null): void
     {
         $backupPath = $remote->storagePath() . '/backups/' . $filename;
         $command = 'cd ' . escapeshellarg($remote->workingPath()) . ' && php craft db/restore ' . escapeshellarg($backupPath) . ' --drop-all-tables 2>&1';
-        $this->runSshCommand($remote, $command, $this->getTimeout('download'));
+        $this->runSshCommand($remote, $command, $this->getTimeout('download'), $callback);
     }
 
     public function deleteRemoteBackup(RemoteConfig $remote, string $filename): void
@@ -207,7 +259,7 @@ class RemoteSyncService extends Component
         $this->runSshCommand($remote, $command, 30);
     }
 
-    public function rsyncDownload(RemoteConfig $remote, string $storagePath): string
+    public function rsyncDownload(RemoteConfig $remote, string $storagePath): void
     {
         $remoteHost = $this->getSshHost($remote);
         $remotePath = $remote->storagePath() . '/' . $storagePath . '/';
@@ -215,10 +267,10 @@ class RemoteSyncService extends Component
         $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
         $args = $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath, false, $excludePaths);
-        return $this->runProcess($args, $this->getTimeout('fileSync'));
+        $this->runProcessStreaming($args, $this->getTimeout('fileSync'));
     }
 
-    public function rsyncUpload(RemoteConfig $remote, string $storagePath): string
+    public function rsyncUpload(RemoteConfig $remote, string $storagePath): void
     {
         $remoteHost = $this->getSshHost($remote);
         $localPath = \Craft::$app->getPath()->getStoragePath() . DIRECTORY_SEPARATOR . $storagePath . DIRECTORY_SEPARATOR;
@@ -226,7 +278,7 @@ class RemoteSyncService extends Component
         $excludePaths = $this->getConfig()['exclude_paths'] ?? [];
 
         $args = $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath, false, $excludePaths);
-        return $this->runProcess($args, $this->getTimeout('fileSync'));
+        $this->runProcessStreaming($args, $this->getTimeout('fileSync'));
     }
 
     public function rsyncDryRun(RemoteConfig $remote, string $storagePath, string $direction): string
