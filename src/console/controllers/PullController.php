@@ -10,7 +10,6 @@ use Noo\CraftRemoteSync\Module;
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
 use function Laravel\Prompts\intro;
-use function Laravel\Prompts\note;
 use function Laravel\Prompts\outro;
 use function Laravel\Prompts\warning;
 
@@ -24,8 +23,6 @@ class PullController extends Controller
     use InteractsWithRemote;
 
     public $defaultAction = 'index';
-
-    private const EXIT_ABORTED = 2;
 
     /**
      * Pull database and/or storage files from a remote environment to local.
@@ -49,17 +46,8 @@ class PullController extends Controller
         if ($operation === 'both') {
             $this->displayDatabasePreview();
 
-            $service = Module::$instance->getRemoteSyncService();
-            $paths = Module::$instance->getConfig()['paths'] ?? [];
-            foreach ($paths as $storagePath) {
-                try {
-                    $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'download'));
-                    note("Path: {$storagePath}");
-                    $this->displayFilesPreview($dryRunOutput);
-                } catch (\RuntimeException $e) {
-                    error("Could not run preview for '{$storagePath}': " . $e->getMessage());
-                    return 1;
-                }
+            if (!$this->previewFiles($remote, 'download')) {
+                return 1;
             }
 
             if (!$this->confirmBothPull()) {
@@ -76,16 +64,12 @@ class PullController extends Controller
             if ($result !== 0) {
                 return $result;
             }
-        }
-
-        if ($operation === 'database') {
+        } elseif ($operation === 'database') {
             $result = $this->pullDatabase($remote);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
-        }
-
-        if ($operation === 'files') {
+        } elseif ($operation === 'files') {
             $result = $this->pullFiles($remote);
             if ($result !== 0) {
                 return $result;
@@ -119,7 +103,6 @@ class PullController extends Controller
         }
 
         $remoteFilename = null;
-        $localBackupPath = null;
 
         try {
             $remoteFilename = $this->runStep('Creating remote backup...', fn() => $service->createRemoteBackup($remote, $callback));
@@ -144,19 +127,14 @@ class PullController extends Controller
             return 1;
         }
 
-        // Clean up the downloaded backup
-        if ($remoteFilename !== null) {
-            try {
-                $this->runStep('Cleaning up remote backup...', fn() => $service->deleteRemoteBackup($remote, $remoteFilename));
-                $this->clearRemoteCleanup();
-            } catch (\RuntimeException $e) {
-                warning("Could not clean up remote backup: " . $e->getMessage());
-            }
+        try {
+            $this->runStep('Cleaning up remote backup...', fn() => $service->deleteRemoteBackup($remote, $remoteFilename));
+            $this->clearRemoteCleanup();
+        } catch (\RuntimeException $e) {
+            warning("Could not clean up remote backup: " . $e->getMessage());
         }
 
-        if ($localBackupPath !== null && file_exists($localBackupPath)) {
-            $this->runStep('Cleaning up local backup...', fn() => @unlink($localBackupPath));
-        }
+        $this->runStep('Cleaning up local backup...', fn() => @unlink($localBackupPath));
 
         return 0;
     }
@@ -173,15 +151,8 @@ class PullController extends Controller
         }
 
         if (!$confirmed) {
-            foreach ($paths as $storagePath) {
-                try {
-                    $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'download'));
-                    note("Path: {$storagePath}");
-                    $this->displayFilesPreview($dryRunOutput);
-                } catch (\RuntimeException $e) {
-                    error("Could not run preview for '{$storagePath}': " . $e->getMessage());
-                    return 1;
-                }
+            if (!$this->previewFiles($remote, 'download')) {
+                return 1;
             }
 
             if (!$this->confirmFilesPull()) {

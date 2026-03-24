@@ -10,7 +10,6 @@ use Noo\CraftRemoteSync\Module;
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
 use function Laravel\Prompts\intro;
-use function Laravel\Prompts\note;
 use function Laravel\Prompts\outro;
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\warning;
@@ -36,11 +35,10 @@ class PushController extends Controller
 
     public bool $force = false;
 
-    private const EXIT_ABORTED = 2;
-
     public function options($actionID): array
     {
         return array_merge(parent::options($actionID), [
+            'verbose',
             'remoteHost',
             'remotePath',
             'database',
@@ -63,13 +61,12 @@ class PushController extends Controller
                 path: $this->remotePath,
                 pushAllowed: true,
             );
-            $this->verifyHostConnection($remote);
-            $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
         } else {
             $remote = $this->selectPushRemote();
-            $this->verifyHostConnection($remote);
-            $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
         }
+
+        $this->verifyHostConnection($remote);
+        $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
 
         if ($remote->isAtomic) {
             info('Atomic deployment detected.');
@@ -78,21 +75,11 @@ class PushController extends Controller
         $operation = $this->resolveOperation();
 
         if ($operation === 'both') {
-            $service = Module::$instance->getRemoteSyncService();
-
             if (!$this->force) {
                 $this->displayDatabasePreview();
 
-                $paths = Module::$instance->getConfig()['paths'] ?? [];
-                foreach ($paths as $storagePath) {
-                    try {
-                        $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'));
-                        note("Path: {$storagePath}");
-                        $this->displayFilesPreview($dryRunOutput);
-                    } catch (\RuntimeException $e) {
-                        error("Could not run preview for '{$storagePath}': " . $e->getMessage());
-                        return 1;
-                    }
+                if (!$this->previewFiles($remote, 'upload')) {
+                    return 1;
                 }
 
                 if (!$this->confirmBothPush()) {
@@ -110,16 +97,12 @@ class PushController extends Controller
             if ($result !== 0) {
                 return $result;
             }
-        }
-
-        if ($operation === 'database') {
+        } elseif ($operation === 'database') {
             $result = $this->pushDatabase($remote);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
-        }
-
-        if ($operation === 'files') {
+        } elseif ($operation === 'files') {
             $result = $this->pushFiles($remote);
             if ($result !== 0) {
                 return $result;
@@ -171,7 +154,6 @@ class PushController extends Controller
             );
 
         if ($createBackup) {
-            // Create a remote backup as a safety net before overwriting the remote database
             try {
                 $remoteSafetyBackup = $this->runStep('Creating remote safety backup...', fn() => $service->createRemoteBackup($remote, $callback));
                 info("Remote safety backup: {$remoteSafetyBackup}");
@@ -192,23 +174,15 @@ class PushController extends Controller
             return 1;
         }
 
-        // Clean up the uploaded backup on remote
-        if ($localFilename !== null) {
-            try {
-                $this->runStep('Cleaning up remote uploaded backup...', fn() => $service->deleteRemoteBackup($remote, $localFilename));
-                $this->clearRemoteCleanup();
-            } catch (\RuntimeException $e) {
-                warning("Could not clean up remote backup: " . $e->getMessage());
-            }
+        try {
+            $this->runStep('Cleaning up remote uploaded backup...', fn() => $service->deleteRemoteBackup($remote, $localFilename));
+            $this->clearRemoteCleanup();
+        } catch (\RuntimeException $e) {
+            warning("Could not clean up remote backup: " . $e->getMessage());
         }
 
-        // Clean up the local backup
-        if ($localFilename !== null) {
-            $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $localFilename;
-            if (file_exists($localBackupPath)) {
-                $this->runStep('Cleaning up local backup...', fn() => @unlink($localBackupPath));
-            }
-        }
+        $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $localFilename;
+        $this->runStep('Cleaning up local backup...', fn() => @unlink($localBackupPath));
 
         return 0;
     }
@@ -225,15 +199,8 @@ class PushController extends Controller
         }
 
         if (!$confirmed && !$this->force) {
-            foreach ($paths as $storagePath) {
-                try {
-                    $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, 'upload'));
-                    note("Path: {$storagePath}");
-                    $this->displayFilesPreview($dryRunOutput);
-                } catch (\RuntimeException $e) {
-                    error("Could not run preview for '{$storagePath}': " . $e->getMessage());
-                    return 1;
-                }
+            if (!$this->previewFiles($remote, 'upload')) {
+                return 1;
             }
 
             if (!$this->confirmFilesPush()) {

@@ -18,6 +18,8 @@ use function Laravel\Prompts\warning;
 
 trait InteractsWithRemote
 {
+    protected const EXIT_ABORTED = 2;
+
     public bool $verbose = false;
 
     protected ?RemoteConfig $selectedRemote = null;
@@ -100,14 +102,6 @@ trait InteractsWithRemote
         }
     }
 
-    public function ensurePushAllowed(RemoteConfig $remote): void
-    {
-        if (!$remote->pushAllowed) {
-            error("Push is not allowed for remote '{$remote->name}'. Set 'pushAllowed' => true in config/remote-sync.php");
-            exit(1);
-        }
-    }
-
     public function confirmDbPull(): bool
     {
         warning('This will overwrite your LOCAL database with data from the remote.');
@@ -158,6 +152,25 @@ trait InteractsWithRemote
         ]);
     }
 
+    public function previewFiles(RemoteConfig $remote, string $direction): bool
+    {
+        $service = Module::$instance->getRemoteSyncService();
+        $paths = Module::$instance->getConfig()['paths'] ?? [];
+
+        foreach ($paths as $storagePath) {
+            try {
+                $dryRunOutput = $this->runStep("Previewing '{$storagePath}'...", fn() => $service->rsyncDryRun($remote, $storagePath, $direction));
+                note("Path: {$storagePath}");
+                $this->displayFilesPreview($dryRunOutput);
+            } catch (\RuntimeException $e) {
+                error("Could not run preview for '{$storagePath}': " . $e->getMessage());
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public function displayFilesPreview(string $dryRunOutput): void
     {
         $lines = explode("\n", trim($dryRunOutput));
@@ -186,11 +199,6 @@ trait InteractsWithRemote
         if ($count > 10) {
             note('... and ' . ($count - 10) . ' more file(s)');
         }
-    }
-
-    public function generateBackupName(): string
-    {
-        return 'remote-sync-' . date('Y-m-d-His') . '.sql.gz';
     }
 
     public function options($actionID): array
