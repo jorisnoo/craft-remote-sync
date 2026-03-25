@@ -11,6 +11,8 @@ class Module extends BaseModule
 
     public function init(): void
     {
+        \Craft::setAlias('@Noo/CraftRemoteSync', __DIR__);
+
         parent::init();
         self::$instance = $this;
 
