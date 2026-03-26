@@ -218,24 +218,24 @@ class RemoteSyncService extends Component
         return $this->parseBackupFilename($output);
     }
 
-    public function downloadBackup(RemoteConfig $remote, string $filename, ?callable $callback = null): void
+    public function downloadBackup(RemoteConfig $remote, string $filename): void
     {
         $remoteHost = $this->getSshHost($remote);
         $remotePath = $remote->storagePath() . '/backups/' . $filename;
         $localPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $filename;
 
         $args = $this->buildRsyncArgs($remote, $remoteHost . ':' . $remotePath, $localPath);
-        $this->runProcess($args, $this->getTimeout('download'), $callback);
+        $this->runProcessStreaming($args, $this->getTimeout('download'));
     }
 
-    public function uploadBackup(RemoteConfig $remote, string $filename, ?callable $callback = null): void
+    public function uploadBackup(RemoteConfig $remote, string $filename): void
     {
         $remoteHost = $this->getSshHost($remote);
         $localPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $filename;
         $remotePath = $remote->storagePath() . '/backups/' . $filename;
 
         $args = $this->buildRsyncArgs($remote, $localPath, $remoteHost . ':' . $remotePath);
-        $this->runProcess($args, $this->getTimeout('upload'), $callback);
+        $this->runProcessStreaming($args, $this->getTimeout('upload'));
     }
 
     public function restoreLocalBackup(string $path, ?callable $callback = null): void

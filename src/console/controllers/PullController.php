@@ -107,7 +107,8 @@ class PullController extends Controller
         try {
             $remoteFilename = $this->runStep('Creating remote backup...', fn() => $service->createRemoteBackup($remote, $callback));
             $this->registerRemoteCleanup($remote, $remoteFilename);
-            $this->runStep('Downloading backup...', fn() => $service->downloadBackup($remote, $remoteFilename, $callback));
+            info('Downloading backup...');
+            $service->downloadBackup($remote, $remoteFilename);
 
             $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $remoteFilename;
 

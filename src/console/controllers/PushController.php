@@ -166,7 +166,8 @@ class PushController extends Controller
 
         try {
             $localFilename = $this->runStep('Creating local backup...', fn() => $service->createLocalBackup($callback));
-            $this->runStep('Uploading backup...', fn() => $service->uploadBackup($remote, $localFilename, $callback));
+            info('Uploading backup...');
+            $service->uploadBackup($remote, $localFilename);
             $this->registerRemoteCleanup($remote, $localFilename);
             $this->runStep('Restoring database on remote...', fn() => $service->loadRemoteBackup($remote, $localFilename, $callback));
         } catch (\RuntimeException $e) {
