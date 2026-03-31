@@ -48,7 +48,7 @@ class RemoteSyncService extends Component
     private function buildRsyncArgs(RemoteConfig $remote, string $source, string $dest, bool $dryRun = false, array $excludePaths = []): array
     {
         $parsed = $this->parseSshHost($remote->host);
-        $args = ['rsync', '-avz', '--exclude=.*'];
+        $args = ['rsync', '-avz', '--progress', '--exclude=.*'];
 
         foreach ($excludePaths as $path) {
             $args[] = '--exclude=' . $path;
