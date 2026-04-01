@@ -32,13 +32,7 @@ return [
     |
     */
 
-    'remotes' => [
-        'production' => [
-            'host' => getenv('REMOTE_SYNC_PRODUCTION_HOST') ?: 'forge@example.com',
-            'path' => getenv('REMOTE_SYNC_PRODUCTION_PATH') ?: '/home/forge/example.com',
-            'pushAllowed' => (bool) (getenv('REMOTE_SYNC_PRODUCTION_PUSH_ALLOWED') ?: false),
-        ],
-    ],
+    'remotes' => [],
 
     /*
     |--------------------------------------------------------------------------
@@ -53,23 +47,6 @@ return [
     'paths' => [
         'app',
         'rebrand',
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Exclude Paths
-    |--------------------------------------------------------------------------
-    |
-    | An array of patterns to exclude from rsync file syncs.
-    | Dotfiles (e.g. .DS_Store, .gitignore) are always excluded automatically.
-    |
-    */
-
-    'exclude_paths' => [
-        'craft-transforms',
-        // 'cache',
-        // '*.log',
-        // 'temp/**',
     ],
 
     /*

@@ -72,28 +72,28 @@ test('buildRsyncArgs basic', function () {
     $remote = makeRemote('forge@example.com');
     $result = callPrivate(makeService(), 'buildRsyncArgs', [$remote, '/src/', '/dest/']);
 
-    expect($result)->toBe(['rsync', '-avz', '--exclude=.*', '/src/', '/dest/']);
+    expect($result)->toBe(['rsync', '-avz', '--progress', '--exclude=.*', '/src/', '/dest/']);
 });
 
 test('buildRsyncArgs with port', function () {
     $remote = makeRemote('forge@example.com:2222');
     $result = callPrivate(makeService(), 'buildRsyncArgs', [$remote, '/src/', '/dest/']);
 
-    expect($result)->toBe(['rsync', '-avz', '--exclude=.*', '-e', 'ssh -p 2222', '/src/', '/dest/']);
+    expect($result)->toBe(['rsync', '-avz', '--progress', '--exclude=.*', '-e', 'ssh -p 2222', '/src/', '/dest/']);
 });
 
 test('buildRsyncArgs with dry run', function () {
     $remote = makeRemote('forge@example.com');
     $result = callPrivate(makeService(), 'buildRsyncArgs', [$remote, '/src/', '/dest/', true]);
 
-    expect($result)->toBe(['rsync', '-avz', '--exclude=.*', '--dry-run', '/src/', '/dest/']);
+    expect($result)->toBe(['rsync', '-avz', '--progress', '--exclude=.*', '--dry-run', '/src/', '/dest/']);
 });
 
 test('buildRsyncArgs with exclude paths', function () {
     $remote = makeRemote('forge@example.com');
     $result = callPrivate(makeService(), 'buildRsyncArgs', [$remote, '/src/', '/dest/', false, ['cache', '*.log']]);
 
-    expect($result)->toBe(['rsync', '-avz', '--exclude=.*', '--exclude=cache', '--exclude=*.log', '/src/', '/dest/']);
+    expect($result)->toBe(['rsync', '-avz', '--progress', '--exclude=.*', '--exclude=cache', '--exclude=*.log', '/src/', '/dest/']);
 });
 
 test('buildRsyncArgs with port, dry run, and excludes', function () {
@@ -101,7 +101,7 @@ test('buildRsyncArgs with port, dry run, and excludes', function () {
     $result = callPrivate(makeService(), 'buildRsyncArgs', [$remote, '/src/', '/dest/', true, ['temp']]);
 
     expect($result)->toBe([
-        'rsync', '-avz', '--exclude=.*',
+        'rsync', '-avz', '--progress', '--exclude=.*',
         '--exclude=temp',
         '-e', 'ssh -p 2222',
         '--dry-run',
