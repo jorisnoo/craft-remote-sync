@@ -26,23 +26,25 @@ class PullController extends Controller
 
     /**
      * Pull database and/or storage files from a remote environment to local.
+     *
+     * Usage: craft remote-sync/pull [remote] [--database] [--files]
      */
-    public function actionIndex(): int
+    public function actionIndex(?string $remote = null): int
     {
         $this->ensureNotProduction(doubleConfirm: true);
 
         intro('Remote Sync — Pull');
 
-        $remote = $this->selectRemote();
-        $this->verifyHostConnection($remote);
-        $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
+        $remoteConfig = $this->resolveRemote($remote);
+        $this->verifyHostConnection($remoteConfig);
+        $remoteConfig = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remoteConfig));
 
-        $this->displayRemoteConfig($remote);
+        $this->displayRemoteConfig($remoteConfig);
 
-        $operation = $this->selectOperation('pull');
+        $operation = $this->resolveOperation('pull');
 
         if ($operation === 'both') {
-            if (!$this->previewFiles($remote, 'download')) {
+            if (!$this->previewFiles($remoteConfig, 'download')) {
                 return 1;
             }
 
@@ -51,22 +53,22 @@ class PullController extends Controller
                 return 0;
             }
 
-            $result = $this->pullDatabase($remote, confirmed: true);
+            $result = $this->pullDatabase($remoteConfig, confirmed: true);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
 
-            $result = $this->pullFiles($remote, confirmed: true);
+            $result = $this->pullFiles($remoteConfig, confirmed: true);
             if ($result !== 0) {
                 return $result;
             }
         } elseif ($operation === 'database') {
-            $result = $this->pullDatabase($remote);
+            $result = $this->pullDatabase($remoteConfig);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
         } elseif ($operation === 'files') {
-            $result = $this->pullFiles($remote);
+            $result = $this->pullFiles($remoteConfig);
             if ($result !== 0) {
                 return $result;
             }

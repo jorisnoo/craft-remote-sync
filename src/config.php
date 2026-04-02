@@ -67,7 +67,7 @@ return [
         'createSnapshot' => 300,
         'download' => 300,
         'upload' => 300,
-        'fileSync' => 300,
+        'fileSync' => 600,
     ],
 
 ];

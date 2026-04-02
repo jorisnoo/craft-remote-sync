@@ -22,50 +22,61 @@ trait InteractsWithRemote
 
     public bool $verbose = false;
 
+    public bool $database = false;
+
+    public bool $files = false;
+
     protected ?RemoteConfig $selectedRemote = null;
 
     private ?string $pendingRemoteBackup = null;
 
     private ?RemoteConfig $cleanupRemote = null;
 
-    public function selectRemote(): RemoteConfig
+    public function resolveRemote(?string $hint, bool $pushOnly = false): RemoteConfig
     {
         $service = Module::$instance->getRemoteSyncService();
         $remotes = array_values(array_filter(
-            $service->getAvailableRemotes(),
+            $pushOnly ? $service->getAvailablePushRemotes() : $service->getAvailableRemotes(),
             fn($name) => $name !== \Craft::$app->env,
         ));
 
         if (empty($remotes)) {
-            error("No remotes are configured in config/remote-sync.php");
+            $message = $pushOnly
+                ? "No remotes are configured with push enabled. Set 'pushAllowed' => true in config/remote-sync.php"
+                : "No remotes are configured in config/remote-sync.php";
+            error($message);
             exit(1);
         }
 
+        if ($hint !== null) {
+            $name = $this->matchRemoteByPrefix($hint, $remotes);
+            $this->selectedRemote = $service->getRemote($name);
+            return $this->selectedRemote;
+        }
+
+        $label = $pushOnly ? 'Select a remote to push to' : 'Select a remote';
         $options = array_combine($remotes, $remotes);
-        $name = select(label: 'Select a remote', options: $options);
+        $name = select(label: $label, options: $options);
 
         $this->selectedRemote = $service->getRemote($name);
         return $this->selectedRemote;
     }
 
-    public function selectPushRemote(): RemoteConfig
+    private function matchRemoteByPrefix(string $hint, array $remotes): string
     {
-        $service = Module::$instance->getRemoteSyncService();
-        $remotes = array_values(array_filter(
-            $service->getAvailablePushRemotes(),
-            fn($name) => $name !== \Craft::$app->env,
-        ));
+        $matches = array_filter($remotes, fn($name) => str_starts_with($name, $hint));
 
-        if (empty($remotes)) {
-            error("No remotes are configured with push enabled. Set 'pushAllowed' => true in config/remote-sync.php");
+        if (count($matches) === 1) {
+            return reset($matches);
+        }
+
+        if (count($matches) === 0) {
+            error("No remote matching '{$hint}'. Available: " . implode(', ', $remotes));
             exit(1);
         }
 
-        $options = array_combine($remotes, $remotes);
-        $name = select(label: 'Select a remote to push to', options: $options);
-
-        $this->selectedRemote = $service->getRemote($name);
-        return $this->selectedRemote;
+        error("Ambiguous remote '{$hint}'. Matches: " . implode(', ', $matches));
+        exit(1);
     }
 
     public function verifyHostConnection(RemoteConfig $remote): void
@@ -204,7 +215,24 @@ trait InteractsWithRemote
 
     public function options($actionID): array
     {
-        return array_merge(parent::options($actionID), ['verbose']);
+        return array_merge(parent::options($actionID), ['verbose', 'database', 'files']);
+    }
+
+    protected function resolveOperation(string $direction): string
+    {
+        if ($this->database && $this->files) {
+            return 'both';
+        }
+
+        if ($this->database) {
+            return 'database';
+        }
+
+        if ($this->files) {
+            return 'files';
+        }
+
+        return $this->selectOperation($direction);
     }
 
     public function streamingCallback(): ?callable

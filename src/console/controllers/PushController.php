@@ -29,52 +29,47 @@ class PushController extends Controller
 
     public ?string $remotePath = null;
 
-    public bool $database = false;
-
-    public bool $files = false;
-
     public bool $force = false;
 
     public function options($actionID): array
     {
-        return array_merge(parent::options($actionID), [
-            'verbose',
+        return array_merge(InteractsWithRemote::options($actionID), [
             'remoteHost',
             'remotePath',
-            'database',
-            'files',
             'force',
         ]);
     }
 
     /**
      * Push database and/or storage files from local to a remote environment.
+     *
+     * Usage: craft remote-sync/push [remote] [--database] [--files] [--force]
      */
-    public function actionIndex(): int
+    public function actionIndex(?string $remote = null): int
     {
         intro('Remote Sync — Push');
 
         if ($this->remoteHost && $this->remotePath) {
-            $remote = new RemoteConfig(
+            $remoteConfig = new RemoteConfig(
                 name: 'zentrale-sync',
                 host: $this->remoteHost,
                 path: $this->remotePath,
                 pushAllowed: true,
             );
         } else {
-            $remote = $this->selectPushRemote();
+            $remoteConfig = $this->resolveRemote($remote, pushOnly: true);
         }
 
-        $this->verifyHostConnection($remote);
-        $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
+        $this->verifyHostConnection($remoteConfig);
+        $remoteConfig = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remoteConfig));
 
-        $this->displayRemoteConfig($remote);
+        $this->displayRemoteConfig($remoteConfig);
 
-        $operation = $this->resolveOperation();
+        $operation = $this->resolveOperation('push');
 
         if ($operation === 'both') {
             if (!$this->force) {
-                if (!$this->previewFiles($remote, 'upload')) {
+                if (!$this->previewFiles($remoteConfig, 'upload')) {
                     return 1;
                 }
 
@@ -84,22 +79,22 @@ class PushController extends Controller
                 }
             }
 
-            $result = $this->pushDatabase($remote, confirmed: true);
+            $result = $this->pushDatabase($remoteConfig, confirmed: true);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
 
-            $result = $this->pushFiles($remote, confirmed: true);
+            $result = $this->pushFiles($remoteConfig, confirmed: true);
             if ($result !== 0) {
                 return $result;
             }
         } elseif ($operation === 'database') {
-            $result = $this->pushDatabase($remote);
+            $result = $this->pushDatabase($remoteConfig);
             if ($result !== 0) {
                 return $result === self::EXIT_ABORTED ? 0 : $result;
             }
         } elseif ($operation === 'files') {
-            $result = $this->pushFiles($remote);
+            $result = $this->pushFiles($remoteConfig);
             if ($result !== 0) {
                 return $result;
             }
@@ -107,23 +102,6 @@ class PushController extends Controller
 
         outro('Done!');
         return 0;
-    }
-
-    private function resolveOperation(): string
-    {
-        if ($this->database && $this->files) {
-            return 'both';
-        }
-
-        if ($this->database) {
-            return 'database';
-        }
-
-        if ($this->files) {
-            return 'files';
-        }
-
-        return $this->selectOperation('push');
     }
 
     private function pushDatabase(RemoteConfig $remote, bool $confirmed = false): int
