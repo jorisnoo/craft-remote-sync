@@ -122,10 +122,9 @@ class RemoteSyncService extends Component
 
     // --- Public API ---
 
-    public function getRemote(?string $name = null): RemoteConfig
+    public function getRemote(string $name): RemoteConfig
     {
         $config = $this->getConfig();
-        $name = $name ?? $config['default'];
         $remotes = $config['remotes'] ?? [];
 
         if (!isset($remotes[$name])) {

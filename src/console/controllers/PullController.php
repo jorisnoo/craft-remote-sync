@@ -37,15 +37,11 @@ class PullController extends Controller
         $this->verifyHostConnection($remote);
         $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
 
-        if ($remote->isAtomic) {
-            info('Atomic deployment detected.');
-        }
+        $this->displayRemoteConfig($remote);
 
         $operation = $this->selectOperation('pull');
 
         if ($operation === 'both') {
-            $this->displayDatabasePreview();
-
             if (!$this->previewFiles($remote, 'download')) {
                 return 1;
             }
@@ -86,8 +82,6 @@ class PullController extends Controller
         $callback = $this->streamingCallback();
 
         if (!$confirmed) {
-            $this->displayDatabasePreview();
-
             if (!$this->confirmDbPull()) {
                 info('Aborted.');
                 return self::EXIT_ABORTED;

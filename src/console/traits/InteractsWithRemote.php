@@ -138,18 +138,19 @@ trait InteractsWithRemote
         return confirm(label: 'Do you want to continue?', default: false, yes: "Yes, push to {$this->selectedRemote->name}", no: 'No, abort');
     }
 
-    public function displayDatabasePreview(): void
+    public function displayRemoteConfig(RemoteConfig $remote): void
     {
-        if ($this->selectedRemote === null) {
-            return;
-        }
-
-        $remote = $this->selectedRemote;
-        table(headers: ['Setting', 'Value'], rows: [
+        $rows = [
             ['Remote', $remote->name],
             ['Host',   $remote->host],
             ['Path',   $remote->workingPath()],
-        ]);
+        ];
+
+        if ($remote->isAtomic) {
+            $rows[] = ['Atomic', 'Yes'];
+        }
+
+        table(headers: ['Setting', 'Value'], rows: $rows);
     }
 
     public function previewFiles(RemoteConfig $remote, string $direction): bool

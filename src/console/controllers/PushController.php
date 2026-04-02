@@ -68,16 +68,12 @@ class PushController extends Controller
         $this->verifyHostConnection($remote);
         $remote = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remote));
 
-        if ($remote->isAtomic) {
-            info('Atomic deployment detected.');
-        }
+        $this->displayRemoteConfig($remote);
 
         $operation = $this->resolveOperation();
 
         if ($operation === 'both') {
             if (!$this->force) {
-                $this->displayDatabasePreview();
-
                 if (!$this->previewFiles($remote, 'upload')) {
                     return 1;
                 }
@@ -136,8 +132,6 @@ class PushController extends Controller
         $callback = $this->streamingCallback();
 
         if (!$confirmed && !$this->force) {
-            $this->displayDatabasePreview();
-
             if (!$this->confirmDbPush()) {
                 info('Aborted.');
                 return self::EXIT_ABORTED;

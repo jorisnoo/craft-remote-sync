@@ -9,18 +9,6 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Default Remote
-    |--------------------------------------------------------------------------
-    |
-    | The name of the default remote environment to use when no remote
-    | is specified. Must match one of the keys in the 'remotes' array.
-    |
-    */
-
-    'default' => getenv('REMOTE_SYNC_DEFAULT') ?: 'production',
-
-    /*
-    |--------------------------------------------------------------------------
     | Remote Environments
     |--------------------------------------------------------------------------
     |
