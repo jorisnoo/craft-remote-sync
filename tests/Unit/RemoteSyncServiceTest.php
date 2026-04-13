@@ -128,3 +128,57 @@ test('parseBackupFilename handles multiline output', function () {
 test('parseBackupFilename throws on missing filename', function () {
     callPrivate(makeService(), 'parseBackupFilename', ['no backup path here']);
 })->throws(RuntimeException::class, 'Could not parse backup filename');
+
+// --- sanitizeBackup ---
+
+function dumpWithSandboxHeader(): string
+{
+    return "/*!999999\\- enable the sandbox mode */\n"
+        . "-- MariaDB dump\n"
+        . "CREATE TABLE foo (id INT);\n";
+}
+
+function dumpWithoutSandboxHeader(): string
+{
+    return "-- MariaDB dump\n"
+        . "CREATE TABLE foo (id INT);\n";
+}
+
+test('sanitizeBackup strips sandbox header from plain SQL file', function () {
+    $path = tempnam(sys_get_temp_dir(), 'sanitize') . '.sql';
+    file_put_contents($path, dumpWithSandboxHeader());
+
+    makeService()->sanitizeBackup($path);
+
+    expect(file_get_contents($path))->toBe(dumpWithoutSandboxHeader());
+
+    @unlink($path);
+});
+
+test('sanitizeBackup strips sandbox header from gzipped SQL file', function () {
+    $path = tempnam(sys_get_temp_dir(), 'sanitize') . '.sql.gz';
+    file_put_contents($path, gzencode(dumpWithSandboxHeader()));
+
+    makeService()->sanitizeBackup($path);
+
+    $decoded = gzdecode(file_get_contents($path));
+    expect($decoded)->toBe(dumpWithoutSandboxHeader());
+
+    @unlink($path);
+});
+
+test('sanitizeBackup leaves dumps without the header intact', function () {
+    $path = tempnam(sys_get_temp_dir(), 'sanitize') . '.sql';
+    $original = dumpWithoutSandboxHeader();
+    file_put_contents($path, $original);
+
+    makeService()->sanitizeBackup($path);
+
+    expect(file_get_contents($path))->toBe($original);
+
+    @unlink($path);
+});
+
+test('sanitizeBackup is a no-op when file does not exist', function () {
+    makeService()->sanitizeBackup('/nonexistent/path/foo.sql');
+})->throwsNoExceptions();

@@ -266,6 +266,62 @@ class RemoteSyncService extends Component
         $this->runProcess($args, $this->getTimeout('download'), $callback);
     }
 
+    // Strip the MariaDB 10.5+ sandbox-mode header from a dump file. Older MariaDB
+    // `mysql` clients don't recognise the `\-` token and abort restore at line 1 with
+    // "Unknown command '\-'".
+    public function sanitizeBackup(string $path): void
+    {
+        if (!is_file($path)) {
+            return;
+        }
+
+        $handle = fopen($path, 'rb');
+        if ($handle === false) {
+            return;
+        }
+        $magic = fread($handle, 2);
+        fclose($handle);
+        $isGzipped = $magic === "\x1f\x8b";
+
+        $tmpPath = $path . '.sanitize.tmp';
+        $in = $isGzipped ? gzopen($path, 'rb') : fopen($path, 'rb');
+        $out = $isGzipped ? gzopen($tmpPath, 'wb') : fopen($tmpPath, 'wb');
+
+        if ($in === false || $out === false) {
+            if ($in !== false) {
+                $isGzipped ? gzclose($in) : fclose($in);
+            }
+            if ($out !== false) {
+                $isGzipped ? gzclose($out) : fclose($out);
+            }
+            @unlink($tmpPath);
+            throw new \RuntimeException("Could not open backup for sanitization: {$path}");
+        }
+
+        $readLine = $isGzipped ? 'gzgets' : 'fgets';
+        $write = $isGzipped ? 'gzwrite' : 'fwrite';
+        $eof = $isGzipped ? 'gzeof' : 'feof';
+
+        while (!$eof($in)) {
+            $line = $readLine($in);
+            if ($line === false) {
+                break;
+            }
+            if (str_starts_with($line, '/*!999999\\-')) {
+                continue;
+            }
+            $write($out, $line);
+        }
+
+        $isGzipped ? gzclose($in) : fclose($in);
+        $isGzipped ? gzclose($out) : fclose($out);
+
+        if (!rename($tmpPath, $path)) {
+            @unlink($tmpPath);
+            throw new \RuntimeException("Could not replace sanitized backup: {$path}");
+        }
+    }
+
     public function loadRemoteBackup(RemoteConfig $remote, string $filename, ?callable $callback = null): void
     {
         $backupPath = $remote->storagePath() . '/backups/' . $filename;
