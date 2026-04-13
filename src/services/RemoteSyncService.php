@@ -69,6 +69,28 @@ class RemoteSyncService extends Component
         return $args;
     }
 
+    private function formatProcessError(string $label, Process $process): string
+    {
+        $parts = [$label];
+        $parts[] = 'Command: ' . $process->getCommandLine();
+        $parts[] = 'Exit code: ' . ($process->getExitCode() ?? 'unknown');
+
+        $stderr = trim($process->getErrorOutput());
+        $stdout = trim($process->getOutput());
+
+        if ($stderr !== '') {
+            $parts[] = "stderr:\n" . $stderr;
+        }
+        if ($stdout !== '') {
+            $parts[] = "stdout:\n" . $stdout;
+        }
+        if ($stderr === '' && $stdout === '') {
+            $parts[] = '(no output captured)';
+        }
+
+        return implode("\n", $parts);
+    }
+
     private function runSshCommand(RemoteConfig $remote, string $command, int $timeout, ?callable $callback = null): string
     {
         $args = $this->buildSshArgs($remote, $command);
@@ -77,7 +99,7 @@ class RemoteSyncService extends Component
         $process->run($callback);
 
         if (!$process->isSuccessful()) {
-            throw new \RuntimeException('SSH command failed: ' . $process->getErrorOutput());
+            throw new \RuntimeException($this->formatProcessError('SSH command failed.', $process));
         }
 
         return $process->getOutput();
@@ -90,7 +112,7 @@ class RemoteSyncService extends Component
         $process->run($callback);
 
         if (!$process->isSuccessful()) {
-            throw new \RuntimeException('Process failed: ' . $process->getErrorOutput());
+            throw new \RuntimeException($this->formatProcessError('Process failed.', $process));
         }
 
         return $process->getOutput();
@@ -106,7 +128,7 @@ class RemoteSyncService extends Component
             }
         });
         if (!$process->isSuccessful()) {
-            throw new \RuntimeException('Process failed: ' . $process->getErrorOutput());
+            throw new \RuntimeException($this->formatProcessError('Process failed.', $process));
         }
     }
 
