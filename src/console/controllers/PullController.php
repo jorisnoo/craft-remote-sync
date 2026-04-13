@@ -111,6 +111,8 @@ class PullController extends Controller
 
             $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $remoteFilename;
 
+            $service->sanitizeBackup($localBackupPath);
+
             $this->runStep('Restoring database...', fn() => $service->restoreLocalBackup($localBackupPath, $callback));
         } catch (\RuntimeException $e) {
             error("Error during database pull: " . $e->getMessage());
