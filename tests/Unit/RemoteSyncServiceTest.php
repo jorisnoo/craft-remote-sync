@@ -131,9 +131,9 @@ test('parseBackupFilename throws on missing filename', function () {
 
 // --- sanitizeBackup ---
 
-function dumpWithSandboxHeader(): string
+function dumpWithSandboxHeader(string $prefix = '/*M!'): string
 {
-    return "/*!999999\\- enable the sandbox mode */\n"
+    return "{$prefix}999999\\- enable the sandbox mode */\n"
         . "-- MariaDB dump\n"
         . "CREATE TABLE foo (id INT);\n";
 }
@@ -144,9 +144,20 @@ function dumpWithoutSandboxHeader(): string
         . "CREATE TABLE foo (id INT);\n";
 }
 
-test('sanitizeBackup strips sandbox header from plain SQL file', function () {
+test('sanitizeBackup strips MariaDB sandbox header (/*M! variant)', function () {
     $path = tempnam(sys_get_temp_dir(), 'sanitize') . '.sql';
-    file_put_contents($path, dumpWithSandboxHeader());
+    file_put_contents($path, dumpWithSandboxHeader('/*M!'));
+
+    makeService()->sanitizeBackup($path);
+
+    expect(file_get_contents($path))->toBe(dumpWithoutSandboxHeader());
+
+    @unlink($path);
+});
+
+test('sanitizeBackup strips MariaDB sandbox header (/*! variant)', function () {
+    $path = tempnam(sys_get_temp_dir(), 'sanitize') . '.sql';
+    file_put_contents($path, dumpWithSandboxHeader('/*!'));
 
     makeService()->sanitizeBackup($path);
 

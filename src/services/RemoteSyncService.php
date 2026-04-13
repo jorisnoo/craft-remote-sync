@@ -286,7 +286,8 @@ class RemoteSyncService extends Component
             if ($line === false) {
                 break;
             }
-            if (str_starts_with($line, '/*!999999\\-')) {
+            // MariaDB 10.5+ emits either `/*M!999999\- …` or (historically) `/*!999999\- …`.
+            if (preg_match('~^/\*M?!999999\\\\-~', $line)) {
                 continue;
             }
             $write($out, $line);
