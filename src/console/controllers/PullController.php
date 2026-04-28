@@ -90,12 +90,11 @@ class PullController extends Controller
             }
         }
 
-        // Create local backup as a safety net before any destructive operation
         try {
-            $localSafetyBackup = $this->runStep('Creating local safety backup...', fn() => $service->createLocalBackup($callback));
-            info("Local safety backup: {$localSafetyBackup}");
+            $localBackup = $this->runStep('Creating local backup...', fn() => $service->createLocalBackup($callback));
+            info("Local backup: {$localBackup}");
         } catch (\RuntimeException $e) {
-            warning("Could not create local safety backup: " . $e->getMessage());
+            warning("Could not create local backup: " . $e->getMessage());
         }
 
         $remoteFilename = null;

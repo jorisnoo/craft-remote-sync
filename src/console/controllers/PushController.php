@@ -127,10 +127,10 @@ class PushController extends Controller
 
         if ($createBackup) {
             try {
-                $remoteSafetyBackup = $this->runStep('Creating remote safety backup...', fn() => $service->createRemoteBackup($remote, $callback));
-                info("Remote safety backup: {$remoteSafetyBackup}");
+                $remoteBackup = $this->runStep('Creating remote backup...', fn() => $service->createRemoteBackup($remote, $callback));
+                info("Remote backup: {$remoteBackup}");
             } catch (\RuntimeException $e) {
-                warning("Could not create remote safety backup: " . $e->getMessage());
+                warning("Could not create remote backup: " . $e->getMessage());
             }
         }
 

@@ -14,7 +14,7 @@ A Craft CMS module that syncs databases and storage files between remote and loc
 - Push your local database to a remote environment
 - Sync storage subdirectories (uploads, rebrand, etc.) via rsync
 - Interactive CLI with dry-run preview before any destructive operation
-- Automatic safety backups before overwriting either environment's database
+- Automatic backups before overwriting either environment's database
 - Support for multiple named remotes (production, staging, etc.)
 - Atomic deployment support (`current/` symlink pattern)
 - Push protection — remotes are push-disabled by default
@@ -143,7 +143,7 @@ The command will:
 1. Ask which remote to use (defaults to the configured `default`)
 2. Detect whether the remote uses an atomic deployment layout
 3. Ask which operation to perform: `database`, `files`, or `both`
-4. For **database**: show a preview, create a local safety backup, pull and restore the remote database
+4. For **database**: show a preview, create a local backup, pull and restore the remote database
 5. For **files**: show a rsync dry-run preview, then sync each configured storage path
 
 ### Push (local → remote)
@@ -157,7 +157,7 @@ The command will:
 1. Ask which remote to use
 2. Verify that `pushAllowed` is `true` for the selected remote — aborts if not
 3. Ask which operation to perform: `database`, `files`, or `both`
-4. For **database**: show a preview, create a remote safety backup, upload and restore the local database
+4. For **database**: show a preview, create a remote backup, upload and restore the local database
 5. For **files**: show a rsync dry-run preview, then sync each configured storage path
 
 ---
