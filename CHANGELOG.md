@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+## [2.0.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v2.0.0) (2026-05-12)
+
+### Features
+
+- sanitize database backups by stripping MariaDB sandbox headers ([d02fbb0](https://github.com/jorisnoo/craft-remote-sync/commit/d02fbb0d2acb53e20dae4dbc78655f06e4fdf1b2))
+- add --progress flag to rsync operations ([0bdaf7b](https://github.com/jorisnoo/craft-remote-sync/commit/0bdaf7baf0e4445932fb6357226cd6d0d32b97d2))
+- add dependabot auto-merge workflow and refactor backup sync methods ([fb6efad](https://github.com/jorisnoo/craft-remote-sync/commit/fb6efad3954169b8463cbeea7d9108c5c4f7216c))
+- register module alias ([ffcd45d](https://github.com/jorisnoo/craft-remote-sync/commit/ffcd45d2b7fe9f401858f0c388db88a42d88ddf5))
+- add CI test workflow and basic unit tests ([a51f08e](https://github.com/jorisnoo/craft-remote-sync/commit/a51f08e733f6eb0277f7f9e36bf077134f47c9e1))
+- **push:** add CLI options for remote host, path, and force flag ([897dffd](https://github.com/jorisnoo/craft-remote-sync/commit/897dffd51b358824165e77697169198f04c020d6))
+- require double confirmation for pull and push both operations ([5f617ae](https://github.com/jorisnoo/craft-remote-sync/commit/5f617ae95ebda905d992281dd6c7920c290a63b5))
+- add confirmation prompt before creating remote backup on push ([85fc60e](https://github.com/jorisnoo/craft-remote-sync/commit/85fc60e39b57c859d03d9aa85406f29784dccf47))
+- exclude craft-transforms from rsync by default ([a91f604](https://github.com/jorisnoo/craft-remote-sync/commit/a91f604d65bf0456784097ad5a5617c21fd2caa2))
+- display rsync output summary after sync operations ([8effe27](https://github.com/jorisnoo/craft-remote-sync/commit/8effe27e084929affae4aab9b9ebe642a0aebb9a))
+- show selected remote name when only one remote is available ([cd00f69](https://github.com/jorisnoo/craft-remote-sync/commit/cd00f69b225987a127b7d1e5742eb7441d89a799))
+- exclude dotfiles from rsync and fix confirm prompt labels ([a019db2](https://github.com/jorisnoo/craft-remote-sync/commit/a019db2d856494f16cd48929e8007ded57f61d1e))
+- filter push-disallowed remotes from push command picker ([2c50621](https://github.com/jorisnoo/craft-remote-sync/commit/2c506212c8e871e6a9c2f8c69568dcedbbfeaa72))
+- add Laravel Prompts TUI to pull & push commands ([1eb8a20](https://github.com/jorisnoo/craft-remote-sync/commit/1eb8a20ce472335947027cbedf9f2d523e72c5bb))
+- [US-008] - Branch for Craft 5 ([f483292](https://github.com/jorisnoo/craft-remote-sync/commit/f4832920fab7272d6c67fc3e039aa490aca08bd7))
+
+### Bug Fixes
+
+- **backup:** support both MariaDB sandbox header variants ([40b5477](https://github.com/jorisnoo/craft-remote-sync/commit/40b54773867cb2699043868c38bf47b04de480cb))
+- use distinct exit code for user abort to prevent early pipeline termination ([e897bda](https://github.com/jorisnoo/craft-remote-sync/commit/e897bdacbf97bd9efa88a6c57ec95f71636a8e9c))
+
+### Code Refactoring
+
+- simplify backup terminology by removing "safety" prefix ([517f93f](https://github.com/jorisnoo/craft-remote-sync/commit/517f93ffcc57bbe855ec1f1be90ae9151d8e7fc0))
+- consolidate process error formatting ([416ce5f](https://github.com/jorisnoo/craft-remote-sync/commit/416ce5fdcb3aab1d46689244b39202a5577b1447))
+- consolidate remote selection and operation handling with optional remote parameter ([2c47047](https://github.com/jorisnoo/craft-remote-sync/commit/2c47047a019bfb8b936a9f0a4d933d664546d368))
+- remove default remote configuration ([f3b546c](https://github.com/jorisnoo/craft-remote-sync/commit/f3b546cc5f8651261956ccfe6cdcc4e26652b557))
+- remove default configuration from config.php ([eba4146](https://github.com/jorisnoo/craft-remote-sync/commit/eba4146138beefb28016a1675d968f101c3cb651))
+- simplify dependabot auto-merge workflow ([9b87c91](https://github.com/jorisnoo/craft-remote-sync/commit/9b87c913a1f462e1a93763876e06abfd9d3dfc00))
+- extract file preview method and cache configuration ([790efc9](https://github.com/jorisnoo/craft-remote-sync/commit/790efc9718c0c1cac126bab0f847cb2f941d4f10))
+- rename namespace from jorge\craftremotesync to Noo\CraftRemoteSync ([fb9761a](https://github.com/jorisnoo/craft-remote-sync/commit/fb9761a18bc30eb8bd89c8408065ad90bf076b40))
+- convert plugin to Yii2 module ([f30bcdf](https://github.com/jorisnoo/craft-remote-sync/commit/f30bcdf42e337252f64316eee2956c7e247b94c5))
+
+### Documentation
+
+- fix remaining plugin→module reference in README ([303bc84](https://github.com/jorisnoo/craft-remote-sync/commit/303bc8470a67192c0236b6c86a64596fe812b23c))
+- restore badges in README ([be79349](https://github.com/jorisnoo/craft-remote-sync/commit/be7934958b3562784e2870fb012fa81723ec4302))
+- add README, gitignore, and plugin metadata to composer.json ([dcfbc4e](https://github.com/jorisnoo/craft-remote-sync/commit/dcfbc4ebefacdd511bcf8472e6490485e53f8bc0))
+
+### Chores
+
+- add dependabot configuration and update base module import ([8b17298](https://github.com/jorisnoo/craft-remote-sync/commit/8b1729888ec2dbfdb293c078dad74bef2e6484e0))
+- update PRD and progress for US-008 ([9e99493](https://github.com/jorisnoo/craft-remote-sync/commit/9e99493dcd7819e1f569973d3d67bf5eeb221d41))
 ## [1.2.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.2.1) (2026-03-16)
 
 ### Features
