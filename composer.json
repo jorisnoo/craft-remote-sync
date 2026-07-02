@@ -21,8 +21,7 @@
         {
             "name": "Joris Noordermeer",
             "email": "contact@noordermeer.ch",
-            "homepage": "https://github.com/jorisnoo",
-            "role": "Developer"
+            "homepage": "https://github.com/jorisnoo"
         }
     ],
     "require": {
