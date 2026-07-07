@@ -1,73 +1,52 @@
 <?php
 /**
- * Remote Sync config file.
+ * Remote Sync config.
  *
- * Publish this file to config/remote-sync.php in your Craft project to customize settings.
+ * Copy this file to config/remote-sync.php in your Craft project to customise it.
  */
+
+use craft\helpers\App;
 
 return [
 
-    /*
-    |--------------------------------------------------------------------------
-    | Remote Environments
-    |--------------------------------------------------------------------------
-    |
-    | Each entry represents a remote environment. The key is the remote name.
-    |
-    | - host:        SSH connection string (e.g., 'user@example.com' or 'user@example.com:2222')
-    | - path:        Absolute path to the Craft application root on the remote server
-    | - pushAllowed: Whether pushing to this remote is permitted (false by default for safety)
-    |
-    */
+    // Remote environments, keyed by name. Each needs a host (SSH connection
+    // string, e.g. 'forge@example.com' or 'forge@example.com:2222') and a path
+    // (the Craft app root on the server). A /current atomic-deploy layout is
+    // detected automatically. Set php_binary to pin a specific binary and skip
+    // auto-detection. Pushing is disabled per remote unless push is true.
+    'remotes' => [
+        // 'production' => [
+        //     'host' => App::env('REMOTE_SYNC_PRODUCTION_HOST'),
+        //     'path' => App::env('REMOTE_SYNC_PRODUCTION_PATH'),
+        //     'push' => (bool) App::env('REMOTE_SYNC_PRODUCTION_PUSH'),
+        //     // 'php_binary' => '/usr/bin/php8.4',
+        // ],
+    ],
 
-    'remotes' => [],
+    // Used when no remote is given and more than one remote is configured.
+    'default' => App::env('REMOTE_SYNC_DEFAULT'),
 
-    /*
-    |--------------------------------------------------------------------------
-    | Storage Paths
-    |--------------------------------------------------------------------------
-    |
-    | An array of subdirectories within the Craft storage/ directory to sync.
-    | Paths are relative to the storage/ directory (e.g., 'rebrand', 'uploads').
-    |
-    */
-
+    // Paths relative to storage/ synced by the files scope.
     'paths' => [
         'app',
-        'rebrand',
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Exclude Paths
-    |--------------------------------------------------------------------------
-    |
-    | An array of patterns to exclude from rsync file syncs.
-    | Dotfiles (e.g. .DS_Store, .gitignore) are always excluded automatically.
-    |
-    */
-
+    // Extra rsync exclude patterns (e.g. 'cache', '*.log', 'temp/**').
+    // Dotfiles are always excluded automatically.
     'exclude_paths' => [
         'craft-transforms',
-        // 'cache',
-        // '*.log',
-        // 'temp/**',
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Timeouts
-    |--------------------------------------------------------------------------
-    |
-    | Timeout values in seconds for each operation.
-    |
-    */
+    // Pull and push refuse to run when the local Craft environment is
+    // production. Set to true if this machine is intentionally a sync source or
+    // target while running in production.
+    'allow_production' => false,
 
+    // Timeouts in seconds. 'remote' covers short remote commands (probing,
+    // listing and deleting snapshots, craft up). 'transfer' covers data-sized
+    // operations (backup create/restore and rsync transfers).
     'timeouts' => [
-        'createSnapshot' => 300,
-        'download' => 300,
-        'upload' => 300,
-        'fileSync' => 600,
+        'remote' => 300,
+        'transfer' => 1800,
     ],
-
 ];
