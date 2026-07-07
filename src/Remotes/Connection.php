@@ -104,6 +104,16 @@ class Connection
     }
 
     /**
+     * Extra rsync exclude patterns from config (on top of the always-excluded dotfiles).
+     *
+     * @return list<string>
+     */
+    public function excludePaths(): array
+    {
+        return array_values($this->config()['exclude_paths'] ?? []);
+    }
+
+    /**
      * The SSH target (user@host) with any :port stripped; the port is passed via -p instead.
      */
     public function sshTarget(): string
