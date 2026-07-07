@@ -16,12 +16,33 @@ class Module extends BaseModule
         parent::init();
         self::$instance = $this;
 
+        $this->registerTranslations();
+
         $this->setComponents([
             'remoteSyncService' => RemoteSyncService::class,
         ]);
 
         if (\Craft::$app->request->isConsoleRequest) {
             $this->controllerNamespace = 'Noo\\CraftRemoteSync\\console\\controllers';
+        }
+    }
+
+    /**
+     * Register the `remote-sync` translation category. A yii\base\Module does
+     * not get Craft's automatic plugin translation registration, so we do it here.
+     */
+    private function registerTranslations(): void
+    {
+        $i18n = \Craft::$app->getI18n();
+
+        if (!isset($i18n->translations['remote-sync'])) {
+            $i18n->translations['remote-sync'] = [
+                'class' => \craft\i18n\PhpMessageSource::class,
+                'sourceLanguage' => 'en',
+                'basePath' => __DIR__ . '/translations',
+                'forceTranslation' => true,
+                'allowOverrides' => true,
+            ];
         }
     }
 
