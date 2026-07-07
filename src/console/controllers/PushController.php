@@ -2,196 +2,344 @@
 
 namespace Noo\CraftRemoteSync\console\controllers;
 
+use Closure;
 use craft\console\Controller;
-use Noo\CraftRemoteSync\console\traits\InteractsWithRemote;
-use Noo\CraftRemoteSync\models\RemoteConfig;
-use Noo\CraftRemoteSync\Module;
+use Noo\CraftRemoteSync\console\traits\ResolvesRemote;
+use Noo\CraftRemoteSync\Remotes\Connection;
+use Noo\CraftRemoteSync\Remotes\RemoteInfo;
+use Noo\CraftRemoteSync\Snapshots\Snapshots;
+use Noo\CraftRemoteSync\Support\CleanupStack;
+use Noo\CraftRemoteSync\Sync\Direction;
+use Noo\CraftRemoteSync\Sync\Planner;
+use Noo\CraftRemoteSync\Sync\PlanRenderer;
+use Noo\CraftRemoteSync\Sync\Rsync;
+use Noo\CraftRemoteSync\Sync\SyncPlan;
+use RuntimeException;
+use yii\console\ExitCode;
 
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
-use function Laravel\Prompts\intro;
-use function Laravel\Prompts\outro;
-use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\multiselect;
 use function Laravel\Prompts\warning;
 
 /**
- * Remote Sync Push command.
+ * Push the local database and/or storage files to a remote environment.
  *
- * Usage: craft remote-sync/push
+ * Usage: craft remote-sync/push [remote] [--database] [--files] [--no-backup]
+ *        [--delete] [--path=app,uploads] [--dry-run] [--force]
  */
 class PushController extends Controller
 {
-    use InteractsWithRemote;
+    use ResolvesRemote;
 
     public $defaultAction = 'index';
 
-    public ?string $remoteHost = null;
+    public bool $noBackup = false;
 
-    public ?string $remotePath = null;
+    public bool $delete = false;
 
-    public bool $force = false;
+    public ?string $path = null;
 
     public function options($actionID): array
     {
-        return array_merge(InteractsWithRemote::options($actionID), [
-            'remoteHost',
-            'remotePath',
-            'force',
+        return array_merge(parent::options($actionID), [
+            'database', 'files', 'force', 'verbose', 'dryRun',
+            'noBackup', 'delete', 'path',
         ]);
     }
 
-    /**
-     * Push database and/or storage files from local to a remote environment.
-     *
-     * Usage: craft remote-sync/push [remote] [--database] [--files] [--force]
-     */
     public function actionIndex(?string $remote = null): int
     {
-        intro('Remote Sync — Push');
-
-        if ($this->remoteHost && $this->remotePath) {
-            $remoteConfig = new RemoteConfig(
-                name: 'zentrale-sync',
-                host: $this->remoteHost,
-                path: $this->remotePath,
-                pushAllowed: true,
-            );
-        } else {
-            $remoteConfig = $this->resolveRemote($remote, pushOnly: true);
+        if (! $this->guardProduction()) {
+            return ExitCode::UNSPECIFIED_ERROR;
         }
 
-        $this->verifyHostConnection($remoteConfig);
-        $remoteConfig = $this->runStep('Checking remote configuration...', fn() => $this->initializeRemote($remoteConfig));
+        $remoteConfig = $this->resolveRemote($remote);
 
-        $this->displayRemoteConfig($remoteConfig);
-
-        $operation = $this->resolveOperation('push');
-
-        if ($operation === 'both') {
-            if (!$this->force) {
-                if (!$this->previewFiles($remoteConfig, 'upload')) {
-                    return 1;
-                }
-
-                if (!$this->confirmBothPush()) {
-                    info('Aborted.');
-                    return 0;
-                }
-            }
-
-            $result = $this->pushDatabase($remoteConfig, confirmed: true);
-            if ($result !== 0) {
-                return $result === self::EXIT_ABORTED ? 0 : $result;
-            }
-
-            $result = $this->pushFiles($remoteConfig, confirmed: true);
-            if ($result !== 0) {
-                return $result;
-            }
-        } elseif ($operation === 'database') {
-            $result = $this->pushDatabase($remoteConfig);
-            if ($result !== 0) {
-                return $result === self::EXIT_ABORTED ? 0 : $result;
-            }
-        } elseif ($operation === 'files') {
-            $result = $this->pushFiles($remoteConfig);
-            if ($result !== 0) {
-                return $result;
-            }
+        if ($remoteConfig === null) {
+            return ExitCode::UNSPECIFIED_ERROR;
         }
 
-        outro('Done!');
-        return 0;
-    }
+        if (! $remoteConfig->push) {
+            error($this->t('errors.push_not_allowed', ['name' => $remoteConfig->name]));
 
-    private function pushDatabase(RemoteConfig $remote, bool $confirmed = false): int
-    {
-        $service = Module::$instance->getRemoteSyncService();
-        $callback = $this->streamingCallback();
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
 
-        if (!$confirmed && !$this->force) {
-            if (!$this->confirmDbPush()) {
-                info('Aborted.');
-                return self::EXIT_ABORTED;
+        $scope = $this->resolveScope();
+
+        if ($scope === null) {
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        [$database, $files] = $scope;
+
+        $connection = new Connection($remoteConfig);
+
+        if (! $this->verifyHostKey($connection)) {
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $info = $this->probeRemote($connection);
+
+        if ($info === null) {
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        if (! $info->hasRsync) {
+            error($this->t('errors.rsync_missing_on_remote', ['name' => $remoteConfig->name]));
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $paths = [];
+
+        if ($files) {
+            $paths = $this->resolvePaths($this->path);
+
+            if ($paths === null) {
+                return ExitCode::UNSPECIFIED_ERROR;
+            }
+
+            if ($paths === []) {
+                warning($this->t('warnings.no_paths_configured'));
+                $files = false;
             }
         }
 
-        $createBackup = $this->force
-            ? true
-            : confirm(
-                label: 'Create a remote backup before pushing?',
-                default: true,
-                yes: 'Yes',
-                no: 'No, skip backup',
-            );
+        if (! $database && ! $files) {
+            info($this->t('info.no_operations_selected'));
 
-        if ($createBackup) {
-            try {
-                $remoteBackup = $this->runStep('Creating remote backup...', fn() => $service->createRemoteBackup($remote, $callback));
-                info("Remote backup: {$remoteBackup}");
-            } catch (\RuntimeException $e) {
-                warning("Could not create remote backup: " . $e->getMessage());
-            }
+            return ExitCode::OK;
         }
 
-        $localFilename = null;
+        $rsync = new Rsync($connection, interactive: $this->isInteractive(), verbose: $this->verbose);
+        $snapshots = new Snapshots($connection, $info);
+        $planner = new Planner($info, $rsync);
 
         try {
-            $localFilename = $this->runStep('Creating local backup...', fn() => $service->createLocalBackup($callback));
-            info('Uploading backup...');
-            $service->uploadBackup($remote, $localFilename);
-            $this->registerRemoteCleanup($remote, $localFilename);
-            $this->runStep('Restoring database on remote...', fn() => $service->loadRemoteBackup($remote, $localFilename, $callback));
-        } catch (\RuntimeException $e) {
-            error("Error during database push: " . $e->getMessage());
-            return 1;
+            $plan = $this->buildPlan(fn (): SyncPlan => $planner->push(
+                database: $database,
+                files: $files,
+                backup: ! $this->noBackup,
+                delete: $this->delete,
+                paths: $paths,
+            ));
+        } catch (RuntimeException $e) {
+            error($e->getMessage());
+
+            return ExitCode::UNSPECIFIED_ERROR;
         }
 
-        try {
-            $this->runStep('Cleaning up remote uploaded backup...', fn() => $service->deleteRemoteBackup($remote, $localFilename));
-            $this->clearRemoteCleanup();
-        } catch (\RuntimeException $e) {
-            warning("Could not clean up remote backup: " . $e->getMessage());
+        (new PlanRenderer($this))->render($remoteConfig, $info, $plan);
+
+        if ($this->dryRun) {
+            info($this->t('info.dry_run_done'));
+
+            return ExitCode::OK;
         }
 
-        $localBackupPath = \Craft::$app->getPath()->getDbBackupPath() . DIRECTORY_SEPARATOR . $localFilename;
-        $this->runStep('Cleaning up local backup...', fn() => @unlink($localBackupPath));
+        if (! $this->confirmPush($remoteConfig->name, $plan)) {
+            if ($this->isInteractive()) {
+                info($this->t('info.operation_cancelled'));
 
-        return 0;
+                return ExitCode::OK;
+            }
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        return $this->executePlan($remoteConfig->name, $connection, $info, $plan, $snapshots, $rsync);
     }
 
-    private function pushFiles(RemoteConfig $remote, bool $confirmed = false): int
+    /**
+     * Pushing overwrites shared data, so the scope must be explicit in scripts
+     * and the interactive confirmation is always a typed yes.
+     *
+     * @return array{0: bool, 1: bool}|null
+     */
+    protected function resolveScope(): ?array
     {
-        $service = Module::$instance->getRemoteSyncService();
-        $config = Module::$instance->getConfig();
-        $paths = $config['paths'] ?? [];
-
-        if (empty($paths)) {
-            info('No storage paths configured in config/remote-sync.php. Skipping files sync.');
-            return 0;
+        if ($this->database || $this->files) {
+            return [$this->database, $this->files];
         }
 
-        if (!$confirmed && !$this->force) {
-            if (!$this->previewFiles($remote, 'upload')) {
-                return 1;
-            }
+        if (! $this->isInteractive()) {
+            error($this->t('errors.push_scope_required'));
 
-            if (!$this->confirmFilesPush()) {
-                info('Aborted.');
-                return 0;
-            }
+            return null;
         }
 
-        foreach ($paths as $storagePath) {
-            try {
-                info("Syncing '{$storagePath}'...");
-                $service->rsyncUpload($remote, $storagePath);
-            } catch (\RuntimeException $e) {
-                error("Error syncing '{$storagePath}': " . $e->getMessage());
-                return 1;
-            }
+        $selected = multiselect(
+            label: $this->t('prompts.operations.push_label'),
+            options: [
+                'database' => $this->t('prompts.operations.database'),
+                'files' => $this->t('prompts.operations.files'),
+            ],
+            default: ['database'],
+            required: true,
+        );
+
+        return [in_array('database', $selected, true), in_array('files', $selected, true)];
+    }
+
+    protected function confirmPush(string $remoteName, SyncPlan $plan): bool
+    {
+        if ($this->force) {
+            return true;
         }
 
-        return 0;
+        if (! $this->isInteractive()) {
+            error($this->t('errors.confirmation_required'));
+
+            return false;
+        }
+
+        return $this->confirmWithTypedYes($this->t('prompts.confirm.push', [
+            'scope' => $plan->scopeSummary(),
+            'name' => $remoteName,
+        ]).' '.$this->t('prompts.confirm.typed_yes_suffix'));
+    }
+
+    protected function executePlan(string $remoteName, Connection $connection, RemoteInfo $info, SyncPlan $plan, Snapshots $snapshots, Rsync $rsync): int
+    {
+        $cleanup = new CleanupStack();
+
+        $this->trapSignals(function () use ($cleanup) {
+            $this->stdout("\n");
+            warning($this->t('warnings.interrupt_cleanup'));
+            $this->runCleanup($cleanup);
+            exit(1);
+        });
+
+        try {
+            if (! $this->runSteps($this->buildSteps($remoteName, $connection, $info, $plan, $snapshots, $rsync, $cleanup))) {
+                return ExitCode::UNSPECIFIED_ERROR;
+            }
+        } finally {
+            $this->runCleanup($cleanup);
+        }
+
+        info($this->t('success.pushed', ['scope' => $plan->scopeSummary(), 'name' => $remoteName]));
+
+        return ExitCode::OK;
+    }
+
+    /**
+     * @return list<array{label: string, run: Closure(): ?string}>
+     */
+    protected function buildSteps(string $remoteName, Connection $connection, RemoteInfo $info, SyncPlan $plan, Snapshots $snapshots, Rsync $rsync, CleanupStack $cleanup): array
+    {
+        $steps = [];
+
+        if ($plan->database) {
+            if ($plan->backup) {
+                $steps[] = [
+                    'label' => "Creating remote backup {$plan->backupName} on [{$remoteName}]",
+                    'run' => function () use ($snapshots, $plan): ?string {
+                        $result = $snapshots->createRemote($plan->backupName, zip: true);
+
+                        return $result->successful()
+                            ? null
+                            : $this->t('errors.failed_remote_backup', ['error' => trim($result->errorOutput())]);
+                    },
+                ];
+            }
+
+            $steps[] = [
+                'label' => 'Creating local snapshot',
+                'run' => function () use ($snapshots, $plan, $cleanup): ?string {
+                    try {
+                        $snapshots->createLocal($plan->snapshotName, zip: false);
+                    } catch (RuntimeException $e) {
+                        return $this->t('errors.failed_local_snapshot', ['error' => $e->getMessage()]);
+                    }
+
+                    Snapshots::sanitize(Snapshots::localPath($plan->snapshotName));
+                    $cleanup->push('local snapshot file', fn () => Snapshots::deleteLocal($plan->snapshotName));
+
+                    return null;
+                },
+            ];
+
+            $steps[] = [
+                'label' => "Uploading snapshot to [{$remoteName}]",
+                'run' => function () use ($snapshots, $plan, $cleanup, $remoteName): ?string {
+                    $result = $snapshots->upload($plan->snapshotName);
+
+                    if (! $result->successful()) {
+                        return $this->t('errors.failed_upload_snapshot', ['error' => trim($result->errorOutput())]);
+                    }
+
+                    $cleanup->push("temporary snapshot on [{$remoteName}]", function () use ($snapshots, $plan) {
+                        if (! $snapshots->deleteRemote($plan->snapshotName)->successful()) {
+                            throw new RuntimeException("delete it manually: {$plan->snapshotName}");
+                        }
+                    });
+
+                    return null;
+                },
+            ];
+
+            $steps[] = [
+                'label' => "Loading snapshot on [{$remoteName}]",
+                'run' => function () use ($snapshots, $plan, $info, $remoteName): ?string {
+                    $result = $snapshots->loadRemote($plan->snapshotName);
+
+                    if (! $result->successful()) {
+                        if ($plan->backup) {
+                            $this->failureNotes[] = $this->t('info.remote_restore_hint', [
+                                'name' => $remoteName,
+                                'path' => $info->backupDir().'/'.$plan->backupName.'.sql.zip',
+                            ]);
+                        }
+
+                        return $this->t('errors.failed_remote_load', ['error' => trim($result->errorOutput())]);
+                    }
+
+                    return null;
+                },
+            ];
+
+            $steps[] = [
+                'label' => "Running craft up on [{$remoteName}]",
+                'run' => function () use ($connection, $info, $remoteName): ?string {
+                    if (! $connection->craft($info, 'up --interactive=0')->successful()) {
+                        warning($this->t('warnings.remote_up_failed', ['name' => $remoteName]));
+                    }
+
+                    return null;
+                },
+            ];
+        }
+
+        foreach ($plan->paths as $path) {
+            $steps[] = [
+                'label' => "Syncing files storage/{$path} to [{$remoteName}]",
+                'run' => function () use ($rsync, $info, $plan, $path): ?string {
+                    $localPath = \Craft::$app->getPath()->getStoragePath().DIRECTORY_SEPARATOR.$path;
+
+                    if (! is_dir($localPath)) {
+                        warning($this->t('warnings.local_path_not_exists', ['path' => $path]));
+
+                        return null;
+                    }
+
+                    $result = $rsync->transfer(
+                        Direction::Push,
+                        "{$info->storagePath()}/{$path}/",
+                        rtrim($localPath, '/').'/',
+                        excludes: $plan->fileExcludes[$path] ?? [],
+                        delete: $plan->delete,
+                    );
+
+                    return $result->successful()
+                        ? null
+                        : $this->t('errors.failed_file_sync', ['path' => $path, 'error' => trim($result->errorOutput())]);
+                },
+            ];
+        }
+
+        return $steps;
     }
 }

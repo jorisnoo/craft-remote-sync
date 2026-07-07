@@ -20,6 +20,7 @@ return [
     'errors.failed_import' => 'Import failed: {error}',
     'errors.failed_file_sync' => 'Failed to sync storage/{path}: {error}',
     'errors.failed_local_backup' => 'Failed to create the local backup: {error}',
+    'errors.failed_local_snapshot' => 'Failed to create the local snapshot: {error}',
     'errors.failed_remote_snapshot' => 'Failed to create the remote snapshot: {error}',
     'errors.failed_remote_backup' => 'Failed to create the remote backup: {error}',
     'errors.failed_download_snapshot' => 'Failed to download the snapshot: {error}',
