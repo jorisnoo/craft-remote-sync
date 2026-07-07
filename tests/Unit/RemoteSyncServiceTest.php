@@ -24,6 +24,15 @@ function makeRemote(string $host = 'forge@example.com', string $path = '/var/www
     return new RemoteConfig(name: 'prod', host: $host, path: $path);
 }
 
+function seedRemotePhpBinary(RemoteSyncService $service, RemoteConfig $remote, string $binary): void
+{
+    $ref = new ReflectionProperty(RemoteSyncService::class, 'remotePhpBinaries');
+    $ref->setAccessible(true);
+    $ref->setValue($service, [
+        $remote->host . '|' . $remote->workingPath() => $binary,
+    ]);
+}
+
 // --- parseSshHost ---
 
 test('parseSshHost parses host without port', function () {
@@ -107,6 +116,28 @@ test('buildRsyncArgs with port, dry run, and excludes', function () {
         '--dry-run',
         '/src/', '/dest/',
     ]);
+});
+
+// --- remoteCraftCommand ---
+
+test('remoteCraftCommand uses detected php binary', function () {
+    $service = makeService();
+    $remote = makeRemote();
+    seedRemotePhpBinary($service, $remote, 'php8.5');
+
+    $result = callPrivate($service, 'remoteCraftCommand', [$remote, 'db/backup --zip 2>&1']);
+
+    expect($result)->toBe("'php8.5' craft db/backup --zip 2>&1");
+});
+
+test('remoteCraftCommand escapes detected php binary path', function () {
+    $service = makeService();
+    $remote = makeRemote();
+    seedRemotePhpBinary($service, $remote, '/usr/local/bin/php8.5');
+
+    $result = callPrivate($service, 'remoteCraftCommand', [$remote, 'db/restore backup.sql.gz']);
+
+    expect($result)->toBe("'/usr/local/bin/php8.5' craft db/restore backup.sql.gz");
 });
 
 // --- parseBackupFilename ---

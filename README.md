@@ -28,6 +28,7 @@ A Craft CMS module that syncs databases and storage files between remote and loc
 | Craft CMS | 5.x |
 | PHP | 8.2+ |
 | Server tools | `ssh`, `rsync`, `mysqldump` / `pg_dump` on both local and remote |
+| Remote PHP | If default `php` does not satisfy the project, expose a compatible versioned binary such as `php8.5` on `PATH`; remote Craft commands auto-detect it. |
 
 ---
 

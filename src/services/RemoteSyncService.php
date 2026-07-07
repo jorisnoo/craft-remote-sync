@@ -9,6 +9,9 @@ use yii\base\Component;
 
 class RemoteSyncService extends Component
 {
+    /** @var array<string, string> */
+    private array $remotePhpBinaries = [];
+
     private function getConfig(): array
     {
         return Module::$instance->getConfig();
@@ -103,6 +106,61 @@ class RemoteSyncService extends Component
         }
 
         return $process->getOutput();
+    }
+
+    private function remoteCraftCommand(RemoteConfig $remote, string $arguments): string
+    {
+        return escapeshellarg($this->detectRemotePhpBinary($remote)) . ' craft ' . $arguments;
+    }
+
+    private function detectRemotePhpBinary(RemoteConfig $remote): string
+    {
+        $cacheKey = $remote->host . '|' . $remote->workingPath();
+
+        if (isset($this->remotePhpBinaries[$cacheKey])) {
+            return $this->remotePhpBinaries[$cacheKey];
+        }
+
+        $candidates = $this->remotePhpBinaryCandidates();
+        $escapedCandidates = array_map(fn(string $binary) => escapeshellarg($binary), $candidates);
+        $escapedPath = escapeshellarg($remote->workingPath());
+        $command = "cd {$escapedPath} && for php_binary in " . implode(' ', $escapedCandidates) . '; do '
+            . 'if command -v "$php_binary" >/dev/null 2>&1 && "$php_binary" -r \'if (file_exists("vendor/composer/platform_check.php")) { require "vendor/composer/platform_check.php"; }\' >/dev/null 2>&1; then '
+            . 'printf "%s" "$php_binary"; exit 0; '
+            . 'fi; '
+            . 'done; exit 1';
+
+        try {
+            $binary = trim($this->runSshCommand($remote, $command, 10));
+        } catch (\RuntimeException) {
+            return $this->remotePhpBinaries[$cacheKey] = 'php';
+        }
+
+        if (in_array($binary, $candidates, true)) {
+            return $this->remotePhpBinaries[$cacheKey] = $binary;
+        }
+
+        return $this->remotePhpBinaries[$cacheKey] = 'php';
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function remotePhpBinaryCandidates(): array
+    {
+        return [
+            'php',
+            'php8.5',
+            'php85',
+            'php8.4',
+            'php84',
+            'php8.3',
+            'php83',
+            'php8.2',
+            'php82',
+            'php8.1',
+            'php81',
+        ];
     }
 
     private function runProcess(array $args, int $timeout, ?callable $callback = null): string
@@ -234,7 +292,7 @@ class RemoteSyncService extends Component
 
     public function createRemoteBackup(RemoteConfig $remote, ?callable $callback = null): string
     {
-        $command = 'cd ' . escapeshellarg($remote->workingPath()) . ' && php craft db/backup --zip 2>&1';
+        $command = 'cd ' . escapeshellarg($remote->workingPath()) . ' && ' . $this->remoteCraftCommand($remote, 'db/backup --zip 2>&1');
         $output = $this->runSshCommand($remote, $command, $this->getTimeout('createSnapshot'), $callback);
         return $this->parseBackupFilename($output);
     }
@@ -326,7 +384,7 @@ class RemoteSyncService extends Component
     public function loadRemoteBackup(RemoteConfig $remote, string $filename, ?callable $callback = null): void
     {
         $backupPath = $remote->storagePath() . '/backups/' . $filename;
-        $command = 'cd ' . escapeshellarg($remote->workingPath()) . ' && php craft db/restore ' . escapeshellarg($backupPath) . ' --drop-all-tables 2>&1';
+        $command = 'cd ' . escapeshellarg($remote->workingPath()) . ' && ' . $this->remoteCraftCommand($remote, 'db/restore ' . escapeshellarg($backupPath) . ' --drop-all-tables 2>&1');
         $this->runSshCommand($remote, $command, $this->getTimeout('download'), $callback);
     }
 
