@@ -39,7 +39,12 @@ class Rsync
 
         $command = $this->command($direction, $remotePath, $localPath, $options, $excludes, $delete);
 
-        return $this->runner->run($command, $this->connection->transferTimeout(), tty: $this->interactive);
+        // In verbose non-interactive runs, stream rsync output instead of capturing it silently.
+        $onOutput = (! $this->interactive && $this->verbose)
+            ? fn (string $type, string $buffer) => fwrite($type === 'err' ? STDERR : STDOUT, $buffer)
+            : null;
+
+        return $this->runner->run($command, $this->connection->transferTimeout(), $onOutput, tty: $this->interactive);
     }
 
     /**
