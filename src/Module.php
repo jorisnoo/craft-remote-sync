@@ -48,7 +48,17 @@ class Module extends BaseModule
         if ($this->cachedConfig === null) {
             $fileConfig = \Craft::$app->getConfig()->getConfigFromFile('remote-sync');
             $defaults = require __DIR__ . '/config.php';
-            $this->cachedConfig = array_replace_recursive($defaults, $fileConfig);
+            $merged = array_replace_recursive($defaults, $fileConfig);
+
+            // List-style keys must replace the default wholesale rather than merge
+            // by index, so a user can shorten or empty them (e.g. exclude_paths => []).
+            foreach (['paths', 'exclude_paths'] as $listKey) {
+                if (array_key_exists($listKey, $fileConfig)) {
+                    $merged[$listKey] = $fileConfig[$listKey];
+                }
+            }
+
+            $this->cachedConfig = $merged;
         }
 
         return $this->cachedConfig;

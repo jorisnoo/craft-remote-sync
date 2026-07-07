@@ -61,7 +61,7 @@ test('createRemote ensures the dir, then runs db/backup plain', function () {
     $snap->createRemote('pre-push-x');
 
     expect($fake->calls[0])->toContain("mkdir -p '/var/www/storage/backups'")
-        ->and(snapshotLine($fake, 'db/backup'))->toContain("craft db/backup '/var/www/storage/backups/pre-push-x.sql' --interactive=0")
+        ->and(snapshotLine($fake, 'db/backup'))->toContain("craft db/backup '/var/www/storage/backups/pre-push-x.sql' --overwrite --interactive=0")
         ->and(snapshotLine($fake, 'db/backup'))->not->toContain('--zip');
 });
 
@@ -70,7 +70,7 @@ test('createRemote can zip a kept backup', function () {
 
     $snap->createRemote('pre-push-x', zip: true);
 
-    expect(snapshotLine($fake, 'db/backup'))->toContain("db/backup '/var/www/storage/backups/pre-push-x.sql' --zip --interactive=0");
+    expect(snapshotLine($fake, 'db/backup'))->toContain("db/backup '/var/www/storage/backups/pre-push-x.sql' --zip --overwrite --interactive=0");
 });
 
 test('loadRemote restores with drop-all-tables', function () {

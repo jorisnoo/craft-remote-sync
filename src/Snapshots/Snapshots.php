@@ -82,7 +82,7 @@ class Snapshots
     {
         $target = static::localDir().DIRECTORY_SEPARATOR.$name.'.sql';
 
-        $args = [PHP_BINARY, static::craftBinary(), 'db/backup', $target, '--interactive=0'];
+        $args = [PHP_BINARY, static::craftBinary(), 'db/backup', $target, '--overwrite', '--interactive=0'];
 
         if ($zip) {
             $args[] = '--zip';
@@ -170,7 +170,7 @@ class Snapshots
         $this->ensureRemoteBackupDir();
 
         $target = escapeshellarg($this->info->backupDir().'/'.$name.'.sql');
-        $arguments = 'db/backup '.$target.($zip ? ' --zip' : '').' --interactive=0';
+        $arguments = 'db/backup '.$target.($zip ? ' --zip' : '').' --overwrite --interactive=0';
 
         return $this->connection->craft($this->info, $arguments, $this->connection->transferTimeout());
     }

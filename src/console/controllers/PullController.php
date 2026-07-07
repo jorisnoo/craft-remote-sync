@@ -174,12 +174,7 @@ class PullController extends Controller
     {
         $cleanup = new CleanupStack();
 
-        $this->trapSignals(function () use ($cleanup) {
-            $this->stdout("\n");
-            warning($this->t('warnings.interrupt_cleanup'));
-            $this->runCleanup($cleanup);
-            exit(1);
-        });
+        $this->ensureCleanupOnExit($cleanup);
 
         try {
             if (! $this->runSteps($this->buildSteps($remoteName, $info, $plan, $snapshots, $rsync, $cleanup))) {

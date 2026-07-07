@@ -341,15 +341,32 @@ trait ResolvesRemote
         }
     }
 
-    protected function trapSignals(Closure $onSignal): void
+    /**
+     * Clean up temporary snapshots on any exit, including an interrupt.
+     *
+     * laravel/prompts' spin() installs its own SIGINT handler that calls exit()
+     * and resets the handler to SIG_DFL afterwards, so a plain pcntl SIGINT trap
+     * does not survive across steps. Running the cleanup from a shutdown function
+     * covers exit() (the spinner's Ctrl+C, our SIGTERM handler, or a fatal) as
+     * well as the normal finally path. CleanupStack is idempotent, so a cleanup
+     * that already ran in the finally block is a silent no-op here.
+     */
+    protected function ensureCleanupOnExit(CleanupStack $cleanup): void
     {
-        if (! function_exists('pcntl_signal')) {
-            return;
-        }
+        register_shutdown_function(function () use ($cleanup) {
+            if ($cleanup->isEmpty()) {
+                return;
+            }
 
-        pcntl_async_signals(true);
-        pcntl_signal(SIGINT, $onSignal);
-        pcntl_signal(SIGTERM, $onSignal);
+            $this->stdout("\n");
+            warning($this->t('warnings.interrupt_cleanup'));
+            $this->runCleanup($cleanup);
+        });
+
+        if (function_exists('pcntl_signal')) {
+            pcntl_async_signals(true);
+            pcntl_signal(SIGTERM, static fn () => exit(1));
+        }
     }
 
     protected function runLocalCraft(string ...$args): ProcessResult

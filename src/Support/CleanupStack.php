@@ -30,6 +30,11 @@ class CleanupStack
         return array_key_exists($label, $this->cleanups);
     }
 
+    public function isEmpty(): bool
+    {
+        return $this->cleanups === [];
+    }
+
     /**
      * Run all pending cleanups in reverse order of registration.
      *
