@@ -1,6 +1,6 @@
 # Remote Sync for Craft CMS
 
-A Craft CMS module that syncs databases and storage files between remote and local environments over SSH/rsync.
+A Craft CMS module that syncs databases and storage files between remote and local environments over SSH and rsync.
 
 ![Craft CMS 5](https://img.shields.io/badge/Craft%20CMS-5.x-e5422b.svg)
 ![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777bb3.svg)
@@ -10,14 +10,14 @@ A Craft CMS module that syncs databases and storage files between remote and loc
 
 ## Features
 
-- Pull a remote database to your local environment with a single command
-- Push your local database to a remote environment
-- Sync storage subdirectories (uploads, rebrand, etc.) via rsync
-- Interactive CLI with dry-run preview before any destructive operation
-- Automatic backups before overwriting either environment's database
-- Support for multiple named remotes (production, staging, etc.)
-- Atomic deployment support (`current/` symlink pattern)
-- Push protection — remotes are push-disabled by default
+- Pull a remote database and storage files to your local environment
+- Push your local database and files to a remote (disabled per remote by default)
+- A plan preview before anything is changed, with a `--dry-run` that stops after it
+- Backups taken automatically before either side's database is overwritten
+- A single SSH round-trip to detect the atomic layout, a compatible PHP binary, and rsync
+- File deletion is opt-in: the preview shows what `--delete` would remove, but nothing is deleted unless you ask
+- `doctor` to check prerequisites and `prune` to clean up old snapshots
+- Support for multiple named remotes and atomic deployments (`current/` symlink)
 
 ---
 
@@ -27,8 +27,10 @@ A Craft CMS module that syncs databases and storage files between remote and loc
 |---|---|
 | Craft CMS | 5.x |
 | PHP | 8.2+ |
-| Server tools | `ssh`, `rsync`, `mysqldump` / `pg_dump` on both local and remote |
-| Remote PHP | If default `php` does not satisfy the project, expose a compatible versioned binary such as `php8.5` on `PATH`; remote Craft commands auto-detect it. |
+| Local tools | `ssh`, `rsync`, and the database client/dump tools (`mysql`+`mysqldump` or `psql`+`pg_dump`) |
+| Remote tools | `ssh`, `rsync`, and a PHP binary that satisfies the project. If the default `php` does not, expose a versioned binary such as `php8.4` on `PATH` and it is detected automatically, or pin one with `php_binary`. |
+
+Run `craft remote-sync/doctor` to check everything is in place.
 
 ---
 
@@ -38,7 +40,7 @@ A Craft CMS module that syncs databases and storage files between remote and loc
 composer require jorisnoo/craft-remote-sync
 ```
 
-Then add it to your `config/app.php`:
+Register it as a module in `config/app.php`:
 
 ```php
 return [
@@ -49,84 +51,57 @@ return [
 ];
 ```
 
-The `bootstrap` entry is required so the module registers its console controllers on every request.
+The `bootstrap` entry is required so the module registers its console controllers.
 
 ---
 
 ## Configuration
 
-Publish the config file to your Craft project:
+Copy the config file into your project and edit it:
 
 ```bash
 cp vendor/jorisnoo/craft-remote-sync/src/config.php config/remote-sync.php
 ```
 
-Example `config/remote-sync.php`:
-
 ```php
 <?php
 
+use craft\helpers\App;
+
 return [
-
-    /*
-     * The default remote to use when none is specified.
-     * Must match a key in the 'remotes' array below.
-     */
-    'default' => getenv('REMOTE_SYNC_DEFAULT') ?: 'production',
-
-    /*
-     * Remote environments.
-     *
-     *   host        — SSH connection string, optionally with port (user@host or user@host:port)
-     *   path        — Absolute path to the Craft application root on the remote server.
-     *                 For atomic deployments, point to the release parent — the module will
-     *                 automatically append /current when isAtomic is detected.
-     *   pushAllowed — Set to true to permit pushing to this remote. Defaults to false.
-     */
     'remotes' => [
         'production' => [
-            'host'        => getenv('REMOTE_SYNC_HOST') ?: 'user@example.com',
-            'path'        => getenv('REMOTE_SYNC_PATH') ?: '/var/www/html',
-            'pushAllowed' => (bool) (getenv('REMOTE_SYNC_PUSH_ALLOWED') ?: false),
+            'host' => App::env('REMOTE_SYNC_PRODUCTION_HOST'),
+            'path' => App::env('REMOTE_SYNC_PRODUCTION_PATH'),
+            'push' => (bool) App::env('REMOTE_SYNC_PRODUCTION_PUSH'),
+            // 'php_binary' => '/usr/bin/php8.4',
         ],
-        // 'staging' => [
-        //     'host'        => 'user@staging.example.com',
-        //     'path'        => '/var/www/staging',
-        //     'pushAllowed' => true,
-        // ],
     ],
 
-    /*
-     * Storage subdirectories to sync via rsync.
-     * Paths are relative to the storage/ directory.
-     */
-    'paths' => [
-        // 'rebrand',
-        // 'uploads',
-    ],
+    'default' => App::env('REMOTE_SYNC_DEFAULT'),
 
-    /*
-     * Timeout values in seconds for each operation.
-     */
+    'paths' => ['app'],
+
+    'exclude_paths' => ['craft-transforms'],
+
+    'allow_production' => false,
+
     'timeouts' => [
-        'createSnapshot' => 300,
-        'download'       => 300,
-        'upload'         => 300,
-        'fileSync'       => 300,
+        'remote' => 300,
+        'transfer' => 1800,
     ],
-
 ];
 ```
 
-### Environment variables
+Each remote needs a `host` (an SSH connection string, optionally `user@host:port`) and a `path` (the Craft app root on the server). For an atomic deployment, point `path` at the release parent; a `/current` symlink is detected and used automatically. Pushing is refused unless `push` is `true`.
 
-All sensitive values can be provided via environment variables in your `.env` file:
+The env var names follow `REMOTE_SYNC_{REMOTE}_{KEY}`, so a `staging` remote reads `REMOTE_SYNC_STAGING_HOST` and `REMOTE_SYNC_STAGING_PATH`.
 
 ```dotenv
+REMOTE_SYNC_PRODUCTION_HOST=deploy@example.com
+REMOTE_SYNC_PRODUCTION_PATH=/var/www/html
+REMOTE_SYNC_PRODUCTION_PUSH=false
 REMOTE_SYNC_DEFAULT=production
-REMOTE_SYNC_HOST=deploy@example.com
-REMOTE_SYNC_PATH=/var/www/html
-REMOTE_SYNC_PUSH_ALLOWED=false
 ```
 
 ---
@@ -136,30 +111,47 @@ REMOTE_SYNC_PUSH_ALLOWED=false
 ### Pull (remote → local)
 
 ```bash
-php craft remote-sync/pull
+craft remote-sync/pull [remote] [--database] [--files] [--no-backup] [--keep-snapshot] [--delete] [--path=app,uploads] [--dry-run] [--force]
 ```
 
-The command will:
-
-1. Ask which remote to use (defaults to the configured `default`)
-2. Detect whether the remote uses an atomic deployment layout
-3. Ask which operation to perform: `database`, `files`, or `both`
-4. For **database**: show a preview, create a local backup, pull and restore the remote database
-5. For **files**: show a rsync dry-run preview, then sync each configured storage path
+Without flags it asks which remote and what to sync, verifies the host key, probes the remote, prints the plan, and asks for confirmation. For the database it backs up your local database (`pre-pull-*`), takes a snapshot on the remote, downloads and restores it, then runs `craft up` and clears caches. For files it rsyncs each configured path.
 
 ### Push (local → remote)
 
 ```bash
-php craft remote-sync/push
+craft remote-sync/push [remote] [--database] [--files] [--no-backup] [--delete] [--path=app,uploads] [--dry-run] [--force]
 ```
 
-The command will:
+Push requires the remote to have `push` enabled, always asks for a typed `yes` confirmation, and needs an explicit scope when run non-interactively. It backs up the remote database (`pre-push-*`) before uploading and restoring your local one, then runs `craft up` on the remote.
 
-1. Ask which remote to use
-2. Verify that `pushAllowed` is `true` for the selected remote — aborts if not
-3. Ask which operation to perform: `database`, `files`, or `both`
-4. For **database**: show a preview, create a remote backup, upload and restore the local database
-5. For **files**: show a rsync dry-run preview, then sync each configured storage path
+### Doctor
+
+```bash
+craft remote-sync/doctor [remote]
+```
+
+Checks local tools and, per remote, the host key, application path, PHP binary, and rsync.
+
+### Prune
+
+```bash
+craft remote-sync/prune [remote] [--local] [--remote] [--keep=5] [--all] [--dry-run] [--force]
+```
+
+Deletes old snapshots created by this module, keeping the newest `--keep`. It leaves snapshots it did not create alone unless `--all` is given.
+
+---
+
+## Backups and snapshots
+
+Two kinds of database file are involved:
+
+- A **transfer snapshot** (`remote-sync-*`) is the data being moved. It is temporary and always cleaned up, even if you interrupt with Ctrl+C.
+- A **backup** (`pre-pull-*` locally, `pre-push-*` on the remote) is a safety copy taken before a side is overwritten. It is kept, so you can roll back with `craft db/restore`.
+
+Both live in Craft's standard `storage/backups` directory. Skip the safety backup with `--no-backup`, and keep a pulled transfer snapshot for inspection with `--keep-snapshot`.
+
+A pull or push refuses to run when the local environment is `production`, unless you set `allow_production` to `true`.
 
 ---
 
@@ -172,8 +164,6 @@ This module is maintained on separate branches for each major Craft CMS version:
 | `main` | 5.x | 8.2+ |
 | `craft-4` | 4.x | 8.1+ |
 
-Install the version that matches your Craft installation:
-
 ```bash
 # Craft 5
 composer require jorisnoo/craft-remote-sync
@@ -182,21 +172,10 @@ composer require jorisnoo/craft-remote-sync
 composer require jorisnoo/craft-remote-sync:dev-craft-4
 ```
 
----
-
-## Safety
-
-Before any destructive database operation, the module automatically creates a backup of the database being overwritten:
-
-- **Pull**: a local backup is created before the remote database is restored locally
-- **Push**: a remote backup is created before the local database is restored on the remote
-
-Backups are stored in Craft's standard backup directory and survive the sync, so they can be used to roll back if needed.
-
-Push operations are disabled by default. You must explicitly set `'pushAllowed' => true` in the remote's config (or via `REMOTE_SYNC_PUSH_ALLOWED=true`) before pushing to a remote.
+Upgrading from 2.x? See [UPGRADING.md](UPGRADING.md) for the config and command changes.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE.md) for details.

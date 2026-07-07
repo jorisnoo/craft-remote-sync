@@ -3,7 +3,6 @@
 namespace Noo\CraftRemoteSync;
 
 use yii\base\Module as BaseModule;
-use Noo\CraftRemoteSync\services\RemoteSyncService;
 
 class Module extends BaseModule
 {
@@ -17,10 +16,6 @@ class Module extends BaseModule
         self::$instance = $this;
 
         $this->registerTranslations();
-
-        $this->setComponents([
-            'remoteSyncService' => RemoteSyncService::class,
-        ]);
 
         if (\Craft::$app->request->isConsoleRequest) {
             $this->controllerNamespace = 'Noo\\CraftRemoteSync\\console\\controllers';
@@ -44,11 +39,6 @@ class Module extends BaseModule
                 'allowOverrides' => true,
             ];
         }
-    }
-
-    public function getRemoteSyncService(): RemoteSyncService
-    {
-        return $this->get('remoteSyncService');
     }
 
     private ?array $cachedConfig = null;
