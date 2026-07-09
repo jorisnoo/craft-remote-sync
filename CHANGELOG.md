@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+## [2.0.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v2.0.1) (2026-07-09)
+
+### Features
+
+- **pull:** keep snapshots by default, add --discard-snapshot flag ([d446b52](https://github.com/jorisnoo/craft-remote-sync/commit/d446b52e20ff9cd9d1081be225a24b59add3abd1))
+- stream verbose rsync output and add an arch test ([59f1411](https://github.com/jorisnoo/craft-remote-sync/commit/59f14117059de92bf2d5c98234ec7a491089cf59))
+- add prune and doctor commands, remove the legacy service ([3e3fc30](https://github.com/jorisnoo/craft-remote-sync/commit/3e3fc30be477eed745a534edf5bce21036b691f2))
+- add the redesigned push command with a hard push gate ([a033abb](https://github.com/jorisnoo/craft-remote-sync/commit/a033abbdb28d69085eaeef527e329db2ad9a9d23))
+- add planner, plan preview, and the redesigned pull command ([fe2edfd](https://github.com/jorisnoo/craft-remote-sync/commit/fe2edfd862d605010f3c423bfdf19ca056729fef))
+- add rsync builder, snapshot lifecycle, and support utilities ([bf3da57](https://github.com/jorisnoo/craft-remote-sync/commit/bf3da57c0288957886457f77c81d67f95594869b))
+- add Connection transport and single-round-trip Probe ([9bc7c3e](https://github.com/jorisnoo/craft-remote-sync/commit/9bc7c3e66f0be93738879cc6be52bec019752574))
+- auto-detect compatible PHP version on remote servers ([c50293c](https://github.com/jorisnoo/craft-remote-sync/commit/c50293cf58107d104c9726d27855d843453b182b))
+
+### Bug Fixes
+
+- harden interrupt cleanup, config merge, backups, and dependencies ([5d01419](https://github.com/jorisnoo/craft-remote-sync/commit/5d014192fedfdbf63c6e4160723f8ff61f96cf67))
+
+### Code Refactoring
+
+- add config schema, remote DTOs, registry, and process seam ([442a9ed](https://github.com/jorisnoo/craft-remote-sync/commit/442a9ed9e838aed4a324241ff144d1bc406486bd))
+
+### Chores
+
+- tidy metadata, add LICENSE.md and justfile ([8d13cf2](https://github.com/jorisnoo/craft-remote-sync/commit/8d13cf24fa7fd624a5ad1e39a9b08a56d4085e7c))
 ## [2.0.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v2.0.0) (2026-05-12)
 
 ### Features
