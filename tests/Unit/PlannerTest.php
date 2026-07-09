@@ -28,6 +28,11 @@ test('pull plans a database-only sync with a pre-pull backup', function () {
         ->and($plan->backupName)->toStartWith('pre-pull-');
 });
 
+test('pull keeps the downloaded snapshot by default', function () {
+    expect(plannerFixture()->pull(database: true, files: false)->keepSnapshot)->toBeTrue()
+        ->and(plannerFixture()->pull(database: true, files: false, keepSnapshot: false)->keepSnapshot)->toBeFalse();
+});
+
 test('pull without a backup leaves the backup name empty', function () {
     $plan = plannerFixture()->pull(database: true, files: false, backup: false);
 

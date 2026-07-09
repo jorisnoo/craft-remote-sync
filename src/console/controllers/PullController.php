@@ -26,7 +26,7 @@ use function Laravel\Prompts\warning;
  * Pull the database and/or storage files from a remote environment.
  *
  * Usage: craft remote-sync/pull [remote] [--database] [--files] [--no-backup]
- *        [--keep-snapshot] [--delete] [--path=app,uploads] [--dry-run] [--force]
+ *        [--discard-snapshot] [--delete] [--path=app,uploads] [--dry-run] [--force]
  */
 class PullController extends Controller
 {
@@ -36,7 +36,7 @@ class PullController extends Controller
 
     public bool $noBackup = false;
 
-    public bool $keepSnapshot = false;
+    public bool $discardSnapshot = false;
 
     public bool $delete = false;
 
@@ -46,7 +46,7 @@ class PullController extends Controller
     {
         return array_merge(parent::options($actionID), [
             'database', 'files', 'force', 'verbose', 'dryRun',
-            'noBackup', 'keepSnapshot', 'delete', 'path',
+            'noBackup', 'discardSnapshot', 'delete', 'path',
         ]);
     }
 
@@ -112,7 +112,7 @@ class PullController extends Controller
                 database: $database,
                 files: $files,
                 backup: ! $this->noBackup,
-                keepSnapshot: $this->keepSnapshot,
+                keepSnapshot: ! $this->discardSnapshot,
                 delete: $this->delete,
                 paths: $paths,
             ));
@@ -185,6 +185,10 @@ class PullController extends Controller
         }
 
         info($this->t('success.pulled', ['scope' => $plan->scopeSummary(), 'name' => $remoteName]));
+
+        if ($plan->database && $plan->keepSnapshot) {
+            info($this->t('info.snapshot_kept', ['path' => Snapshots::localPath($plan->snapshotName)]));
+        }
 
         return ExitCode::OK;
     }

@@ -111,7 +111,7 @@ REMOTE_SYNC_DEFAULT=production
 ### Pull (remote → local)
 
 ```bash
-craft remote-sync/pull [remote] [--database] [--files] [--no-backup] [--keep-snapshot] [--delete] [--path=app,uploads] [--dry-run] [--force]
+craft remote-sync/pull [remote] [--database] [--files] [--no-backup] [--discard-snapshot] [--delete] [--path=app,uploads] [--dry-run] [--force]
 ```
 
 Without flags it asks which remote and what to sync, verifies the host key, probes the remote, prints the plan, and asks for confirmation. For the database it backs up your local database (`pre-pull-*`), takes a snapshot on the remote, downloads and restores it, then runs `craft up` and clears caches. For files it rsyncs each configured path.
@@ -146,10 +146,12 @@ Deletes old snapshots created by this module, keeping the newest `--keep`. It le
 
 Two kinds of database file are involved:
 
-- A **transfer snapshot** (`remote-sync-*`) is the data being moved. It is temporary and always cleaned up, even if you interrupt with Ctrl+C.
+- A **transfer snapshot** (`remote-sync-*`) is the data being moved. The copy on the remote is always cleaned up, even if you interrupt with Ctrl+C. On a pull, the copy downloaded to your machine is kept.
 - A **backup** (`pre-pull-*` locally, `pre-push-*` on the remote) is a safety copy taken before a side is overwritten. It is kept, so you can roll back with `craft db/restore`.
 
-Both live in Craft's standard `storage/backups` directory. Skip the safety backup with `--no-backup`, and keep a pulled transfer snapshot for inspection with `--keep-snapshot`.
+Both live in Craft's standard `storage/backups` directory. Skip the safety backup with `--no-backup`, and delete the downloaded snapshot once it has been imported with `--discard-snapshot`. Kept snapshots are subject to `remote-sync/prune`, which keeps the newest five by default.
+
+A push cleans up both copies of its transfer snapshot, local and remote. Only a pull leaves one behind.
 
 A pull or push refuses to run when the local environment is `production`, unless you set `allow_production` to `true`.
 

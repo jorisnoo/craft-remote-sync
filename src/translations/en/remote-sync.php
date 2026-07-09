@@ -48,7 +48,7 @@ return [
     'info.host_key_accepted' => 'Host key for [{host}] has been saved.',
     'info.restore_hint' => 'Your previous database was backed up. Restore it with: craft db/restore {path} --drop-all-tables',
     'info.remote_restore_hint' => 'The remote database was backed up first. Restore it on [{name}] with: craft db/restore {path} --drop-all-tables',
-    'info.snapshot_kept' => 'The downloaded snapshot was kept for inspection: {path}',
+    'info.snapshot_kept' => 'The downloaded snapshot was kept at: {path}',
     'info.cleaned_up' => 'Removed {what}.',
     'info.nothing_to_prune' => 'Nothing to prune (keeping the {keep} most recent snapshots).',
     'info.local_prune_header' => 'Local snapshots to delete (keeping the {keep} most recent):',

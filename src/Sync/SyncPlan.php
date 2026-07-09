@@ -14,7 +14,7 @@ readonly class SyncPlan
         public bool $database,
         public bool $files,
         public bool $backup = true,
-        public bool $keepSnapshot = false,
+        public bool $keepSnapshot = true,
         public bool $delete = false,
         public array $paths = [],
         public array $fileChanges = [],

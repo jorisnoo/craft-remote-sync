@@ -27,7 +27,7 @@ class Planner
         bool $database,
         bool $files,
         bool $backup = true,
-        bool $keepSnapshot = false,
+        bool $keepSnapshot = true,
         bool $delete = false,
         array $paths = []
     ): SyncPlan {

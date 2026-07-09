@@ -40,6 +40,7 @@ class PlanRenderer
 
         if ($plan->direction === Direction::Pull) {
             $this->detail('Local backup', $plan->backup ? $plan->backupName : 'skipped (--no-backup)');
+            $this->detail('Snapshot', $plan->keepSnapshot ? $plan->snapshotName : 'deleted after import');
             $this->detail('After import', 'craft up, clear-caches');
         } else {
             $this->detail('Remote backup', $plan->backup ? $plan->backupName : 'skipped (--no-backup)');
