@@ -181,3 +181,7 @@ Upgrading from 2.x? See [UPGRADING.md](UPGRADING.md) for the config and command 
 ## License
 
 MIT — see [LICENSE](LICENSE.md) for details.
+
+## Maintainer releases
+
+See [RELEASING.md](RELEASING.md) for versioning, changelog entries and the release command.

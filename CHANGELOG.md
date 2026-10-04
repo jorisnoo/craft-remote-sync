@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [2.0.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v2.0.1) (2026-07-09)
+## [2.0.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/2.0.1) (2026-07-09)
 
 ### Features
 
@@ -26,7 +26,7 @@
 ### Chores
 
 - tidy metadata, add LICENSE.md and justfile ([8d13cf2](https://github.com/jorisnoo/craft-remote-sync/commit/8d13cf24fa7fd624a5ad1e39a9b08a56d4085e7c))
-## [2.0.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v2.0.0) (2026-05-12)
+## [2.0.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/2.0.0) (2026-05-12)
 
 ### Features
 
@@ -73,17 +73,17 @@
 
 - add dependabot configuration and update base module import ([8b17298](https://github.com/jorisnoo/craft-remote-sync/commit/8b1729888ec2dbfdb293c078dad74bef2e6484e0))
 - update PRD and progress for US-008 ([9e99493](https://github.com/jorisnoo/craft-remote-sync/commit/9e99493dcd7819e1f569973d3d67bf5eeb221d41))
-## [1.2.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.2.1) (2026-03-16)
+## [1.2.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/1.2.1) (2026-03-16)
 
 ### Features
 
 - **pull:** require double confirmation for production operations ([9fcc723](https://github.com/jorisnoo/craft-remote-sync/commit/9fcc723bb27d87da04b29f00a57ed90e4e1b1f2b))
-## [1.2.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.2.0) (2026-03-10)
+## [1.2.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/1.2.0) (2026-03-10)
 
 ### Features
 
 - verify SSH host key before remote operations with interactive fingerprint acceptance ([b41fd85](https://github.com/jorisnoo/craft-remote-sync/commit/b41fd85655143af5dd9c00127a9156c5d1252330))
-## [1.1.2](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.2) (2026-03-10)
+## [1.1.2](https://github.com/jorisnoo/craft-remote-sync/releases/tag/1.1.2) (2026-03-10)
 
 ### Features
 
@@ -94,13 +94,13 @@
 ### Code Refactoring
 
 - extract verbose mode with streaming output support into InteractsWithRemote trait ([9a1ef01](https://github.com/jorisnoo/craft-remote-sync/commit/9a1ef011add35aa6d5b9750637e97999105ad2eb))
-## [1.1.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.1) (2026-03-09)
+## [1.1.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/1.1.1) (2026-03-09)
 
 ### Bug Fixes
 
 - set module basePath before parent initialization ([7c37738](https://github.com/jorisnoo/craft-remote-sync/commit/7c377387c79d4954051020798f7ec7fa383cef7a))
 - exclude current environment from remote selection options ([e821857](https://github.com/jorisnoo/craft-remote-sync/commit/e821857f5e1e8616d628205749cb77fb9b0daed3))
-## [1.1.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.1.0) (2026-03-09)
+## [1.1.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/1.1.0) (2026-03-09)
 
 ### Features
 
@@ -110,7 +110,7 @@
 ### Code Refactoring
 
 - always show remote selection prompt instead of auto-selecting single remote ([332a632](https://github.com/jorisnoo/craft-remote-sync/commit/332a63245c528c2a6aacdeefa965fd8a4fa65ae5))
-## [1.0.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/v1.0.0) (2026-02-28)
+## [1.0.0](https://github.com/jorisnoo/craft-remote-sync/releases/tag/1.0.0) (2026-02-28)
 
 ### Features
 
