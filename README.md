@@ -93,7 +93,7 @@ return [
 ];
 ```
 
-Each remote needs a `host` (an SSH connection string, optionally `user@host:port`) and a `path` (the Craft app root on the server). For an atomic deployment, point `path` at the release parent; a `/current` symlink is detected and used automatically. Pushing is refused unless `push` is `true`.
+Each remote needs a `host` (an SSH connection string, optionally `user@host:port`; neither part may start with `-`) and a `path` (the Craft app root on the server). For an atomic deployment, point `path` at the release parent; a `/current` symlink is detected and used automatically. Pushing is refused unless `push` is `true`.
 
 The env var names follow `REMOTE_SYNC_{REMOTE}_{KEY}`, so a `staging` remote reads `REMOTE_SYNC_STAGING_HOST` and `REMOTE_SYNC_STAGING_PATH`.
 
@@ -130,7 +130,7 @@ Push requires the remote to have `push` enabled, always asks for a typed `yes` c
 craft remote-sync/doctor [remote]
 ```
 
-Checks local tools and, per remote, the host key, application path, PHP binary, and rsync.
+Checks local tools and, per remote, the host key, application path, PHP binary, rsync, and whether the remote `storage/backups` directory is writable. The remote name may be abbreviated to any unambiguous prefix, as with pull and push.
 
 ### Prune
 
@@ -149,7 +149,7 @@ Two kinds of database file are involved:
 - A **transfer snapshot** (`remote-sync-*`) is the data being moved. The copy on the remote is always cleaned up, even if you interrupt with Ctrl+C. On a pull, the copy downloaded to your machine is kept.
 - A **backup** (`pre-pull-*` locally, `pre-push-*` on the remote) is a safety copy taken before a side is overwritten. It is kept, so you can roll back with `craft db/restore`.
 
-Both live in Craft's standard `storage/backups` directory. Skip the safety backup with `--no-backup`, and delete the downloaded snapshot once it has been imported with `--discard-snapshot`. Kept snapshots are subject to `remote-sync/prune`, which keeps the newest five by default.
+Both live in Craft's standard `storage/backups` directory, which file syncs never touch: `backups` is rejected as a `--path` or `paths` entry. Skip the safety backup with `--no-backup`, and delete the downloaded snapshot once it has been imported with `--discard-snapshot`. Kept snapshots are subject to `remote-sync/prune`, which keeps the newest five by default.
 
 A push cleans up both copies of its transfer snapshot, local and remote. Only a pull leaves one behind.
 

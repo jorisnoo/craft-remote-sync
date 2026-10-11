@@ -7,7 +7,8 @@ use RuntimeException;
 /**
  * Inspects a remote in a single SSH round-trip: it resolves the atomic-deploy
  * working path, finds a PHP binary whose platform satisfies the project's
- * requirements, and checks that rsync is present. The remote's answer is a
+ * requirements, and checks that rsync is present and storage/backups is
+ * writable (or can be created). The remote's answer is a
  * handful of marker lines parsed into an immutable RemoteInfo.
  */
 class Probe
@@ -68,6 +69,7 @@ class Probe
             .'done; '
             .'echo "PHP=$PHP"; '
             .'if command -v rsync >/dev/null 2>&1; then echo RSYNC=1; else echo RSYNC=0; fi; '
+            .'if { [ -d storage/backups ] && [ -w storage/backups ]; } || { [ ! -e storage/backups ] && [ -d storage ] && [ -w storage ]; }; then echo BACKUPS=1; else echo BACKUPS=0; fi; '
             .'exit 0';
     }
 
@@ -76,6 +78,7 @@ class Probe
         $atomic = false;
         $phpBinary = null;
         $hasRsync = false;
+        $backupDirWritable = false;
 
         foreach (preg_split('/\r?\n/', $output) ?: [] as $line) {
             $line = trim($line);
@@ -87,6 +90,8 @@ class Probe
                 $phpBinary = $value !== '' ? $value : null;
             } elseif (str_starts_with($line, 'RSYNC=')) {
                 $hasRsync = substr($line, strlen('RSYNC=')) === '1';
+            } elseif (str_starts_with($line, 'BACKUPS=')) {
+                $backupDirWritable = substr($line, strlen('BACKUPS=')) === '1';
             }
         }
 
@@ -99,6 +104,7 @@ class Probe
             isAtomic: $isAtomic,
             workingPath: $workingPath,
             hasRsync: $hasRsync,
+            backupDirWritable: $backupDirWritable,
         );
     }
 }

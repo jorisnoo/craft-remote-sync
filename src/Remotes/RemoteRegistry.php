@@ -39,6 +39,24 @@ class RemoteRegistry
         return in_array($name, $this->names(), true);
     }
 
+    /**
+     * Expand an unambiguous prefix to the configured remote name it matches
+     * (e.g. "prod" for "production"). Other names are returned unchanged.
+     */
+    public function expandName(string $name): string
+    {
+        if ($this->has($name)) {
+            return $name;
+        }
+
+        $matches = array_values(array_filter(
+            $this->names(),
+            fn (string $candidate) => str_starts_with($candidate, $name),
+        ));
+
+        return count($matches) === 1 ? $matches[0] : $name;
+    }
+
     public function defaultName(): ?string
     {
         $default = $this->config()['default'] ?? null;
@@ -85,6 +103,14 @@ class RemoteRegistry
         if (str_contains($value, 'your-server') || str_contains($value, 'example.com')) {
             throw new InvalidArgumentException(
                 "Remote '{$remote}' still uses the placeholder {$key} '{$value}'. Set {$envVar} in your .env or edit config/remote-sync.php."
+            );
+        }
+
+        // A leading dash would be parsed as an option by ssh and rsync (the
+        // whole target) or ssh-keyscan (the bare hostname after user@).
+        if ($key === 'host' && (str_starts_with($value, '-') || str_contains($value, '@-'))) {
+            throw new InvalidArgumentException(
+                "Remote '{$remote}' has an invalid host '{$value}': neither the user nor the hostname may start with '-'."
             );
         }
 

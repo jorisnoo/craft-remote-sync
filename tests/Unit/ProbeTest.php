@@ -30,6 +30,7 @@ test('command probes atomic layout, php binary, and rsync in one round-trip', fu
         ->and($cmd)->toContain('echo "ATOMIC=$ATOMIC"')
         ->and($cmd)->toContain('echo "PHP=$PHP"')
         ->and($cmd)->toContain('echo RSYNC=1')
+        ->and($cmd)->toContain('[ -w storage/backups ]')
         ->and($cmd)->toContain("'php8.5'")
         ->and($cmd)->toContain('REMOTE_SYNC_CD_FAILED');
 });
@@ -42,18 +43,20 @@ test('command uses only the pinned php binary when configured', function () {
 });
 
 test('run reads the marker lines and derives an atomic working path', function () {
-    $info = runProbe("ATOMIC=1\nPHP=php8.4\nRSYNC=1\n", probeRemote());
+    $info = runProbe("ATOMIC=1\nPHP=php8.4\nRSYNC=1\nBACKUPS=1\n", probeRemote());
 
     expect($info->isAtomic)->toBeTrue()
+        ->and($info->backupDirWritable)->toBeTrue()
         ->and($info->phpBinary)->toBe('php8.4')
         ->and($info->hasRsync)->toBeTrue()
         ->and($info->workingPath)->toBe('/var/www/current');
 });
 
 test('run treats an empty PHP marker as null', function () {
-    $info = runProbe("ATOMIC=0\nPHP=\nRSYNC=0\n", probeRemote());
+    $info = runProbe("ATOMIC=0\nPHP=\nRSYNC=0\nBACKUPS=0\n", probeRemote());
 
     expect($info->phpBinary)->toBeNull()
+        ->and($info->backupDirWritable)->toBeFalse()
         ->and($info->hasRsync)->toBeFalse()
         ->and($info->isAtomic)->toBeFalse()
         ->and($info->workingPath)->toBe('/var/www');

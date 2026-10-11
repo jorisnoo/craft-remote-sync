@@ -23,3 +23,11 @@ test('normalize trims surrounding slashes', function () {
     expect(StoragePath::normalize('/app/uploads/'))->toBe('app/uploads')
         ->and(StoragePath::normalize('app'))->toBe('app');
 });
+
+test('rejects the database backups directory and anything below it', function () {
+    expect(StoragePath::validate('backups'))->toContain('database backups')
+        ->and(StoragePath::validate('backups/old'))->toContain('database backups')
+        ->and(StoragePath::validate('Backups'))->toContain('database backups')
+        ->and(StoragePath::validate('app/backups'))->toBeNull()
+        ->and(StoragePath::validate('backups-old'))->toBeNull();
+});

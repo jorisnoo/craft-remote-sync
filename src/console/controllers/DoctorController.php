@@ -32,7 +32,7 @@ class DoctorController extends Controller
         $this->checkLocal();
 
         $registry = new RemoteRegistry();
-        $names = $remote !== null ? [$remote] : $registry->names();
+        $names = $remote !== null ? [$registry->expandName($remote)] : $registry->names();
 
         if ($names === []) {
             $this->failCheck('Remotes', 'none configured in config/remote-sync.php');
@@ -140,7 +140,9 @@ class DoctorController extends Controller
             ? $this->passCheck('rsync', 'found')
             : $this->failCheck('rsync', 'not found on the remote');
 
-        $this->passCheck('Backup directory', $info->backupDir());
+        $info->backupDirWritable
+            ? $this->passCheck('Backup directory', $info->backupDir())
+            : $this->failCheck('Backup directory', "{$info->backupDir()} is not writable");
     }
 
     protected function passCheck(string $check, string $detail): void

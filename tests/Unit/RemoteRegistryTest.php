@@ -87,3 +87,18 @@ test('get rejects placeholder hosts', function () {
 test('get uppercases and underscores the remote name in the env var hint', function () {
     registry(['remotes' => ['my-remote' => ['path' => '/var/www']]])->get('my-remote');
 })->throws(InvalidArgumentException::class, 'REMOTE_SYNC_MY_REMOTE_HOST');
+
+test('get rejects a host that would be parsed as an option', function (string $host) {
+    registry(['remotes' => ['production' => ['host' => $host, 'path' => '/var/www']]])->get('production');
+})->with(['-oProxyCommand=evil', 'forge@-oProxyCommand=evil'])
+    ->throws(InvalidArgumentException::class, "may start with '-'");
+
+test('expandName expands an unambiguous prefix', function () {
+    $registry = registry(['remotes' => ['production' => [], 'preview' => [], 'staging' => []]]);
+
+    expect($registry->expandName('prod'))->toBe('production')
+        ->and($registry->expandName('st'))->toBe('staging')
+        ->and($registry->expandName('p'))->toBe('p')
+        ->and($registry->expandName('staging'))->toBe('staging')
+        ->and($registry->expandName('missing'))->toBe('missing');
+});
