@@ -11,7 +11,6 @@ use Noo\CraftRemoteSync\Snapshots\Snapshots;
 use Noo\CraftRemoteSync\Support\CleanupStack;
 use Noo\CraftRemoteSync\Sync\Direction;
 use Noo\CraftRemoteSync\Sync\Planner;
-use Noo\CraftRemoteSync\Sync\PlanRenderer;
 use Noo\CraftRemoteSync\Sync\Rsync;
 use Noo\CraftRemoteSync\Sync\SyncPlan;
 use RuntimeException;
@@ -38,8 +37,6 @@ class PushController extends Controller
 
     public bool $delete = false;
 
-    public ?string $path = null;
-
     public function options($actionID): array
     {
         return array_merge(parent::options($actionID), [
@@ -50,111 +47,22 @@ class PushController extends Controller
 
     public function actionIndex(?string $remote = null): int
     {
-        if (! $this->guardProduction()) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
+        return $this->sync(Direction::Push, $remote);
+    }
 
-        $remoteConfig = $this->resolveRemote($remote);
-
-        if ($remoteConfig === null) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        if (! $remoteConfig->push) {
-            error($this->t('errors.push_not_allowed', ['name' => $remoteConfig->name]));
-
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        $scope = $this->resolveScope();
-
-        if ($scope === null) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        [$database, $files] = $scope;
-
-        $connection = new Connection($remoteConfig);
-
-        if (! $this->verifyHostKey($connection)) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        $info = $this->probeRemote($connection);
-
-        if ($info === null) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        if (! $info->hasRsync) {
-            error($this->t('errors.rsync_missing_on_remote', ['name' => $remoteConfig->name]));
-
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        $paths = [];
-
-        if ($files) {
-            $paths = $this->resolvePaths($this->path);
-
-            if ($paths === null) {
-                return ExitCode::UNSPECIFIED_ERROR;
-            }
-
-            if ($paths === []) {
-                warning($this->t('warnings.no_paths_configured'));
-                $files = false;
-            }
-        }
-
-        if (! $database && ! $files) {
-            info($this->t('info.no_operations_selected'));
-
-            return ExitCode::OK;
-        }
-
-        $rsync = new Rsync($connection, interactive: $this->isInteractive(), verbose: $this->verbose);
-        $snapshots = new Snapshots($connection, $info);
-        $planner = new Planner($info, $rsync);
-
-        try {
-            $plan = $this->buildPlan(fn (): SyncPlan => $planner->push(
-                database: $database,
-                files: $files,
-                backup: ! $this->noBackup,
-                delete: $this->delete,
-                paths: $paths,
-            ));
-        } catch (RuntimeException $e) {
-            error($e->getMessage());
-
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        (new PlanRenderer($this))->render($remoteConfig, $info, $plan);
-
-        if ($this->dryRun) {
-            info($this->t('info.dry_run_done'));
-
-            return ExitCode::OK;
-        }
-
-        if (! $this->confirmPush($remoteConfig->name, $plan)) {
-            if ($this->isInteractive()) {
-                info($this->t('info.operation_cancelled'));
-
-                return ExitCode::OK;
-            }
-
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        return $this->executePlan($remoteConfig->name, $connection, $info, $plan, $snapshots, $rsync);
+    protected function plan(Planner $planner, bool $database, bool $files, array $paths): SyncPlan
+    {
+        return $planner->push(
+            database: $database,
+            files: $files,
+            backup: ! $this->noBackup,
+            delete: $this->delete,
+            paths: $paths,
+        );
     }
 
     /**
-     * Pushing overwrites shared data, so the scope must be explicit in scripts
-     * and the interactive confirmation is always a typed yes.
+     * Pushing overwrites shared data, so the scope must be explicit in scripts.
      *
      * @return array{0: bool, 1: bool}|null
      */
@@ -183,27 +91,10 @@ class PushController extends Controller
         return [in_array('database', $selected, true), in_array('files', $selected, true)];
     }
 
-    protected function confirmPush(string $remoteName, SyncPlan $plan): bool
-    {
-        if ($this->force) {
-            return true;
-        }
-
-        if (! $this->isInteractive()) {
-            error($this->t('errors.confirmation_required'));
-
-            return false;
-        }
-
-        return $this->confirmWithTypedYes($this->t('prompts.confirm.push', [
-            'scope' => $plan->scopeSummary(),
-            'name' => $remoteName,
-        ]).' '.$this->t('prompts.confirm.typed_yes_suffix'));
-    }
-
-    protected function executePlan(string $remoteName, Connection $connection, RemoteInfo $info, SyncPlan $plan, Snapshots $snapshots, Rsync $rsync): int
+    protected function executePlan(string $remoteName, Connection $connection, RemoteInfo $info, SyncPlan $plan, Rsync $rsync): int
     {
         $cleanup = new CleanupStack();
+        $snapshots = new Snapshots($connection, $info);
 
         $this->ensureCleanupOnExit($cleanup);
 
@@ -324,7 +215,6 @@ class PushController extends Controller
                         Direction::Push,
                         "{$info->storagePath()}/{$path}/",
                         rtrim($localPath, '/').'/',
-                        excludes: $plan->fileExcludes[$path] ?? [],
                         delete: $plan->delete,
                     );
 

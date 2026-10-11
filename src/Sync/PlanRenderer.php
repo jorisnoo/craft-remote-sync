@@ -56,35 +56,22 @@ class PlanRenderer
 
         $this->controller->stdout("\n  Files ({$paths})\n", Console::BOLD);
 
-        $transfers = [];
+        $changes = $plan->allFileChanges();
 
-        foreach ($plan->fileChanges as $changes) {
-            $transfers = [...$transfers, ...$changes->transfers];
-        }
-
-        $this->detail('Transfer', count($transfers).' files');
-        $this->listItems($transfers);
+        $this->detail('Transfer', $plan->totalTransfers().' files');
+        $this->listItems($changes->transfers);
 
         $deletions = $plan->totalDeletions();
         $deleteTarget = $plan->direction === Direction::Pull ? 'locally' : "on [{$remote->name}]";
 
-        if ($plan->delete && $deletions > 0) {
-            $this->controller->stdout("    Delete {$deleteTarget}: {$deletions} files\n", Console::FG_YELLOW);
-
-            $deletionList = [];
-
-            foreach ($plan->fileChanges as $changes) {
-                $deletionList = [...$deletionList, ...$changes->deletions];
-            }
-
-            $this->listItems($deletionList);
-        } elseif ($plan->delete) {
+        if ($deletions === 0) {
             $this->detail("Delete {$deleteTarget}", '0 files');
-        } elseif ($deletions > 0) {
+        } elseif ($plan->delete) {
+            $this->controller->stdout("    Delete {$deleteTarget}: {$deletions} files\n", Console::FG_YELLOW);
+            $this->listItems($changes->deletions);
+        } else {
             $only = $plan->direction === Direction::Pull ? 'local-only' : 'remote-only';
             $this->detail("Delete {$deleteTarget}", "0 (pass --delete to remove {$deletions} {$only} files)");
-        } else {
-            $this->detail("Delete {$deleteTarget}", '0 files');
         }
     }
 

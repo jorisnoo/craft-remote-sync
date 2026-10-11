@@ -25,11 +25,6 @@ class CleanupStack
         unset($this->cleanups[$label]);
     }
 
-    public function has(string $label): bool
-    {
-        return array_key_exists($label, $this->cleanups);
-    }
-
     public function isEmpty(): bool
     {
         return $this->cleanups === [];

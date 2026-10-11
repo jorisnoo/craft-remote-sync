@@ -31,9 +31,7 @@ class Planner
         bool $delete = false,
         array $paths = []
     ): SyncPlan {
-        [$fileChanges, $fileExcludes] = $files
-            ? $this->analyzeFiles(Direction::Pull, $paths)
-            : [[], []];
+        $fileChanges = $files ? $this->analyzeFiles(Direction::Pull, $paths) : [];
 
         return new SyncPlan(
             direction: Direction::Pull,
@@ -44,7 +42,6 @@ class Planner
             delete: $delete,
             paths: $files ? $paths : [],
             fileChanges: $fileChanges,
-            fileExcludes: $fileExcludes,
             snapshotName: $database ? Snapshots::transferName() : '',
             backupName: ($database && $backup) ? Snapshots::pullBackupName() : '',
         );
@@ -62,9 +59,7 @@ class Planner
         bool $delete = false,
         array $paths = []
     ): SyncPlan {
-        [$fileChanges, $fileExcludes] = $files
-            ? $this->analyzeFiles(Direction::Push, $paths)
-            : [[], []];
+        $fileChanges = $files ? $this->analyzeFiles(Direction::Push, $paths) : [];
 
         return new SyncPlan(
             direction: Direction::Push,
@@ -74,7 +69,6 @@ class Planner
             delete: $delete,
             paths: $files ? $paths : [],
             fileChanges: $fileChanges,
-            fileExcludes: $fileExcludes,
             snapshotName: $database ? Snapshots::transferName() : '',
             backupName: ($database && $backup) ? Snapshots::pushBackupName() : '',
         );
@@ -83,38 +77,31 @@ class Planner
     /**
      * Dry-run every path to discover transfers and deletable files. The
      * dry-run always includes --delete so the preview can report what a
-     * deletion pass would remove, even when the user did not opt in.
+     * deletion pass would remove, even when the user did not opt in. A
+     * missing local directory is left for the transfer step to create: an
+     * rsync dry-run does not need it to exist.
      *
      * @param  list<string>  $paths
-     * @return array{0: array<string, FileChanges>, 1: array<string, list<string>>}
+     * @return array<string, FileChanges>
      */
     protected function analyzeFiles(Direction $direction, array $paths): array
     {
         $changes = [];
-        $excludes = [];
 
         foreach ($paths as $path) {
             $localPath = \Craft::$app->getPath()->getStoragePath().DIRECTORY_SEPARATOR.$path;
 
-            if ($direction === Direction::Pull && ! is_dir($localPath)) {
-                mkdir($localPath, 0755, true);
-            }
-
             if ($direction === Direction::Push && ! is_dir($localPath)) {
                 $changes[$path] = new FileChanges();
-                $excludes[$path] = [];
 
                 continue;
             }
-
-            $excludes[$path] = $this->snapshotDirExcludesFor($path);
 
             try {
                 $changes[$path] = $this->rsync->dryRun(
                     $direction,
                     "{$this->info->storagePath()}/{$path}/",
                     rtrim($localPath, '/').'/',
-                    excludes: $excludes[$path],
                     delete: true,
                 );
             } catch (RuntimeException $e) {
@@ -122,27 +109,6 @@ class Planner
             }
         }
 
-        return [$changes, $excludes];
-    }
-
-    /**
-     * Keep the database backup directory (storage/backups, on both sides) out
-     * of a file sync when the synced path would otherwise include it.
-     *
-     * @return list<string>
-     */
-    protected function snapshotDirExcludesFor(string $path): array
-    {
-        $backupsRelative = 'backups';
-
-        if ($path === '') {
-            return ['/'.$backupsRelative];
-        }
-
-        if (str_starts_with($backupsRelative, $path.'/')) {
-            return ['/'.substr($backupsRelative, strlen($path) + 1)];
-        }
-
-        return [];
+        return $changes;
     }
 }

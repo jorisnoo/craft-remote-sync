@@ -26,3 +26,16 @@ test('totals are zero without file changes', function () {
     expect($plan->totalTransfers())->toBe(0)
         ->and($plan->totalDeletions())->toBe(0);
 });
+
+test('allFileChanges merges the changes of every path', function () {
+    $plan = new SyncPlan(Direction::Pull, database: false, files: true, fileChanges: [
+        'app' => new FileChanges(['a', 'b'], ['x']),
+        'uploads' => new FileChanges(['c'], ['y']),
+    ]);
+
+    $changes = $plan->allFileChanges();
+
+    expect($changes->transfers)->toBe(['a', 'b', 'c'])
+        ->and($changes->deletions)->toBe(['x', 'y'])
+        ->and((new SyncPlan(Direction::Pull, database: true, files: false))->allFileChanges()->transfers)->toBe([]);
+});

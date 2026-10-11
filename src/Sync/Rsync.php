@@ -40,9 +40,7 @@ class Rsync
         $command = $this->command($direction, $remotePath, $localPath, $options, $excludes, $delete);
 
         // In verbose non-interactive runs, stream rsync output instead of capturing it silently.
-        $onOutput = (! $this->interactive && $this->verbose)
-            ? fn (string $type, string $buffer) => fwrite($type === 'err' ? STDERR : STDOUT, $buffer)
-            : null;
+        $onOutput = (! $this->interactive && $this->verbose) ? self::streamOutput(...) : null;
 
         return $this->runner->run($command, $this->connection->transferTimeout(), $onOutput, tty: $this->interactive);
     }
@@ -74,7 +72,7 @@ class Rsync
         $result = $this->runner->run(
             $command,
             $this->connection->transferTimeout(),
-            $this->verbose ? fn (string $type, string $buffer) => fwrite($type === 'err' ? STDERR : STDOUT, $buffer) : null,
+            $this->verbose ? self::streamOutput(...) : null,
         );
 
         if (! $result->successful()) {
@@ -122,6 +120,14 @@ class Rsync
             : [$localPath, $remoteSpec];
 
         return array_merge(['rsync'], $options, $sshOption, $excludeOptions, [$source, $destination]);
+    }
+
+    /**
+     * Pass a process output chunk through to the matching console stream.
+     */
+    private static function streamOutput(string $type, string $buffer): void
+    {
+        fwrite($type === 'err' ? STDERR : STDOUT, $buffer);
     }
 
     public function parse(string $output): FileChanges

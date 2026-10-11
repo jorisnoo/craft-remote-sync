@@ -34,9 +34,6 @@ test('forget removes a pending cleanup', function () {
     $stack->push('drop', function () use (&$ran) { $ran[] = 'drop'; });
     $stack->forget('drop');
 
-    expect($stack->has('drop'))->toBeFalse()
-        ->and($stack->has('keep'))->toBeTrue();
-
     $stack->run();
 
     expect($ran)->toBe(['keep']);

@@ -48,3 +48,11 @@ test('hostname strips a port from a bare host', function () {
 
     expect($remote->hostname())->toBe('192.168.1.10');
 });
+
+test('sshTarget and sshPort split off a port suffix', function () {
+    $remote = new Remote(name: 'prod', host: 'forge@server.test:2222', path: '/var/www');
+
+    expect($remote->sshTarget())->toBe('forge@server.test')
+        ->and($remote->sshPort())->toBe(2222)
+        ->and((new Remote(name: 'prod', host: 'server.test', path: '/var/www'))->sshPort())->toBeNull();
+});

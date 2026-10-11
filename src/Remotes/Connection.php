@@ -118,12 +118,12 @@ class Connection
      */
     public function sshTarget(): string
     {
-        return $this->parsedHost()['host'];
+        return $this->remote->sshTarget();
     }
 
     public function sshPort(): ?int
     {
-        return $this->parsedHost()['port'];
+        return $this->remote->sshPort();
     }
 
     /**
@@ -143,18 +143,6 @@ class Connection
         $args[] = $command;
 
         return $args;
-    }
-
-    /**
-     * @return array{host: string, port: int|null}
-     */
-    private function parsedHost(): array
-    {
-        if (preg_match('/^(.+):(\d+)$/', $this->remote->host, $matches)) {
-            return ['host' => $matches[1], 'port' => (int) $matches[2]];
-        }
-
-        return ['host' => $this->remote->host, 'port' => null];
     }
 
     /**

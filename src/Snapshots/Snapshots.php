@@ -80,7 +80,7 @@ class Snapshots
      */
     public function createLocal(string $name, bool $zip = false): string
     {
-        $target = static::localDir().DIRECTORY_SEPARATOR.$name.'.sql';
+        $target = static::localPath($name);
 
         $args = [PHP_BINARY, static::craftBinary(), 'db/backup', $target, '--overwrite', '--interactive=0'];
 
@@ -294,7 +294,7 @@ class Snapshots
         return $filename;
     }
 
-    private static function craftBinary(): string
+    public static function craftBinary(): string
     {
         return \Craft::getAlias('@root').DIRECTORY_SEPARATOR.'craft';
     }

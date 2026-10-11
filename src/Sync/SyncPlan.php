@@ -7,7 +7,6 @@ readonly class SyncPlan
     /**
      * @param  list<string>  $paths  Storage-relative paths in the files scope.
      * @param  array<string, FileChanges>  $fileChanges  Keyed by storage-relative path.
-     * @param  array<string, list<string>>  $fileExcludes  Extra rsync excludes, keyed by storage-relative path.
      */
     public function __construct(
         public Direction $direction,
@@ -18,7 +17,6 @@ readonly class SyncPlan
         public bool $delete = false,
         public array $paths = [],
         public array $fileChanges = [],
-        public array $fileExcludes = [],
         public string $snapshotName = '',
         public string $backupName = '',
     ) {}
@@ -29,6 +27,18 @@ readonly class SyncPlan
             $this->database ? 'database' : null,
             $this->files ? 'files' : null,
         ]));
+    }
+
+    /**
+     * The file changes of all paths combined.
+     */
+    public function allFileChanges(): FileChanges
+    {
+        return array_reduce(
+            $this->fileChanges,
+            fn (FileChanges $carry, FileChanges $changes) => $carry->merge($changes),
+            new FileChanges(),
+        );
     }
 
     public function totalTransfers(): int

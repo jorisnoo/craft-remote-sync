@@ -11,7 +11,6 @@ use Noo\CraftRemoteSync\Snapshots\Snapshots;
 use Noo\CraftRemoteSync\Support\CleanupStack;
 use Noo\CraftRemoteSync\Sync\Direction;
 use Noo\CraftRemoteSync\Sync\Planner;
-use Noo\CraftRemoteSync\Sync\PlanRenderer;
 use Noo\CraftRemoteSync\Sync\Rsync;
 use Noo\CraftRemoteSync\Sync\SyncPlan;
 use RuntimeException;
@@ -40,8 +39,6 @@ class PullController extends Controller
 
     public bool $delete = false;
 
-    public ?string $path = null;
-
     public function options($actionID): array
     {
         return array_merge(parent::options($actionID), [
@@ -52,102 +49,25 @@ class PullController extends Controller
 
     public function actionIndex(?string $remote = null): int
     {
-        if (! $this->guardProduction()) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
+        return $this->sync(Direction::Pull, $remote);
+    }
 
-        $remoteConfig = $this->resolveRemote($remote);
-
-        if ($remoteConfig === null) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        [$database, $files] = $this->resolveScope();
-
-        $connection = new Connection($remoteConfig);
-
-        if (! $this->verifyHostKey($connection)) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        $info = $this->probeRemote($connection);
-
-        if ($info === null) {
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        if (! $info->hasRsync) {
-            error($this->t('errors.rsync_missing_on_remote', ['name' => $remoteConfig->name]));
-
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        $paths = [];
-
-        if ($files) {
-            $paths = $this->resolvePaths($this->path);
-
-            if ($paths === null) {
-                return ExitCode::UNSPECIFIED_ERROR;
-            }
-
-            if ($paths === []) {
-                warning($this->t('warnings.no_paths_configured'));
-                $files = false;
-            }
-        }
-
-        if (! $database && ! $files) {
-            info($this->t('info.no_operations_selected'));
-
-            return ExitCode::OK;
-        }
-
-        $rsync = new Rsync($connection, interactive: $this->isInteractive(), verbose: $this->verbose);
-        $snapshots = new Snapshots($connection, $info);
-        $planner = new Planner($info, $rsync);
-
-        try {
-            $plan = $this->buildPlan(fn (): SyncPlan => $planner->pull(
-                database: $database,
-                files: $files,
-                backup: ! $this->noBackup,
-                keepSnapshot: ! $this->discardSnapshot,
-                delete: $this->delete,
-                paths: $paths,
-            ));
-        } catch (RuntimeException $e) {
-            error($e->getMessage());
-
-            return ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        (new PlanRenderer($this))->render($remoteConfig, $info, $plan);
-
-        if ($this->dryRun) {
-            info($this->t('info.dry_run_done'));
-
-            return ExitCode::OK;
-        }
-
-        if (! $this->confirmPlan($this->t('prompts.confirm.pull', [
-            'scope' => $plan->scopeSummary(),
-            'name' => $remoteConfig->name,
-        ]))) {
-            if ($this->isInteractive()) {
-                info($this->t('info.operation_cancelled'));
-            }
-
-            return $this->isInteractive() ? ExitCode::OK : ExitCode::UNSPECIFIED_ERROR;
-        }
-
-        return $this->executePlan($remoteConfig->name, $info, $plan, $snapshots, $rsync);
+    protected function plan(Planner $planner, bool $database, bool $files, array $paths): SyncPlan
+    {
+        return $planner->pull(
+            database: $database,
+            files: $files,
+            backup: ! $this->noBackup,
+            keepSnapshot: ! $this->discardSnapshot,
+            delete: $this->delete,
+            paths: $paths,
+        );
     }
 
     /**
-     * @return array{0: bool, 1: bool}
+     * @return array{0: bool, 1: bool}|null
      */
-    protected function resolveScope(): array
+    protected function resolveScope(): ?array
     {
         if ($this->database || $this->files) {
             return [$this->database, $this->files];
@@ -170,14 +90,15 @@ class PullController extends Controller
         return [in_array('database', $selected, true), in_array('files', $selected, true)];
     }
 
-    protected function executePlan(string $remoteName, RemoteInfo $info, SyncPlan $plan, Snapshots $snapshots, Rsync $rsync): int
+    protected function executePlan(string $remoteName, Connection $connection, RemoteInfo $info, SyncPlan $plan, Rsync $rsync): int
     {
         $cleanup = new CleanupStack();
+        $snapshots = new Snapshots($connection, $info);
 
         $this->ensureCleanupOnExit($cleanup);
 
         try {
-            if (! $this->runSteps($this->buildSteps($remoteName, $info, $plan, $snapshots, $rsync, $cleanup))) {
+            if (! $this->runSteps($this->buildSteps($remoteName, $connection, $info, $plan, $snapshots, $rsync, $cleanup))) {
                 return ExitCode::UNSPECIFIED_ERROR;
             }
         } finally {
@@ -196,7 +117,7 @@ class PullController extends Controller
     /**
      * @return list<array{label: string, run: Closure(): ?string}>
      */
-    protected function buildSteps(string $remoteName, RemoteInfo $info, SyncPlan $plan, Snapshots $snapshots, Rsync $rsync, CleanupStack $cleanup): array
+    protected function buildSteps(string $remoteName, Connection $connection, RemoteInfo $info, SyncPlan $plan, Snapshots $snapshots, Rsync $rsync, CleanupStack $cleanup): array
     {
         $steps = [];
 
@@ -276,8 +197,8 @@ class PullController extends Controller
 
             $steps[] = [
                 'label' => 'Running craft up and clearing caches',
-                'run' => function (): ?string {
-                    $this->runCraftMaintenance();
+                'run' => function () use ($connection): ?string {
+                    $this->runCraftMaintenance($connection);
 
                     return null;
                 },
@@ -298,7 +219,6 @@ class PullController extends Controller
                         Direction::Pull,
                         "{$info->storagePath()}/{$path}/",
                         rtrim($localPath, '/').'/',
-                        excludes: $plan->fileExcludes[$path] ?? [],
                         delete: $plan->delete,
                     );
 
@@ -312,14 +232,14 @@ class PullController extends Controller
         return $steps;
     }
 
-    protected function runCraftMaintenance(): void
+    protected function runCraftMaintenance(Connection $connection): void
     {
-        if (! $this->runLocalCraft('up', '--interactive=0')->successful()) {
+        if (! $this->runLocalCraft($connection, 'up', '--interactive=0')->successful()) {
             warning($this->t('warnings.up_failed'));
         }
 
-        $this->runLocalCraft('clear-caches/all', '--interactive=0');
-        $this->runLocalCraft('gc', '--interactive=0');
+        $this->runLocalCraft($connection, 'clear-caches/all', '--interactive=0');
+        $this->runLocalCraft($connection, 'gc', '--interactive=0');
     }
 
     protected function noteImportFailure(SyncPlan $plan, CleanupStack $cleanup): void

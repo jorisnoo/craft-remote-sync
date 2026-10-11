@@ -13,9 +13,16 @@ use Noo\CraftRemoteSync\Remotes\Probe;
 use Noo\CraftRemoteSync\Remotes\Remote;
 use Noo\CraftRemoteSync\Remotes\RemoteInfo;
 use Noo\CraftRemoteSync\Remotes\RemoteRegistry;
+use Noo\CraftRemoteSync\Snapshots\Snapshots;
 use Noo\CraftRemoteSync\Support\CleanupStack;
 use Noo\CraftRemoteSync\Support\StoragePath;
+use Noo\CraftRemoteSync\Sync\Direction;
+use Noo\CraftRemoteSync\Sync\Planner;
+use Noo\CraftRemoteSync\Sync\PlanRenderer;
+use Noo\CraftRemoteSync\Sync\Rsync;
+use Noo\CraftRemoteSync\Sync\SyncPlan;
 use RuntimeException;
+use yii\console\ExitCode;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\error;
@@ -43,8 +50,138 @@ trait ResolvesRemote
 
     public bool $dryRun = false;
 
+    /** Comma-separated storage paths overriding the configured `paths`. */
+    public ?string $path = null;
+
     /** @var list<string> Guidance printed under a failed step (e.g. restore instructions). */
     protected array $failureNotes = [];
+
+    /**
+     * Which of database and files to sync, or null when the scope cannot be
+     * settled (the error has been printed).
+     *
+     * @return array{0: bool, 1: bool}|null
+     */
+    abstract protected function resolveScope(): ?array;
+
+    /**
+     * Build the direction's plan from the controller's options.
+     *
+     * @param  list<string>  $paths
+     */
+    abstract protected function plan(Planner $planner, bool $database, bool $files, array $paths): SyncPlan;
+
+    abstract protected function executePlan(string $remoteName, Connection $connection, RemoteInfo $info, SyncPlan $plan, Rsync $rsync): int;
+
+    /**
+     * The shared pull/push flow up to execution: resolve, verify and probe the
+     * remote, settle the scope and paths, then build, render and confirm the plan.
+     */
+    protected function sync(Direction $direction, ?string $remote): int
+    {
+        if (! $this->guardProduction()) {
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $remoteConfig = $this->resolveRemote($remote);
+
+        if ($remoteConfig === null) {
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        if ($direction === Direction::Push && ! $remoteConfig->push) {
+            error($this->t('errors.push_not_allowed', ['name' => $remoteConfig->name]));
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $scope = $this->resolveScope();
+
+        if ($scope === null) {
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        [$database, $files] = $scope;
+
+        $connection = new Connection($remoteConfig);
+
+        if (! $this->verifyHostKey($connection)) {
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $info = $this->probeRemote($connection);
+
+        if ($info === null) {
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        if (! $info->hasRsync) {
+            error($this->t('errors.rsync_missing_on_remote', ['name' => $remoteConfig->name]));
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        $paths = [];
+
+        if ($files) {
+            $paths = $this->resolvePaths($this->path);
+
+            if ($paths === null) {
+                return ExitCode::UNSPECIFIED_ERROR;
+            }
+
+            if ($paths === []) {
+                warning($this->t('warnings.no_paths_configured'));
+                $files = false;
+            }
+        }
+
+        if (! $database && ! $files) {
+            info($this->t('info.no_operations_selected'));
+
+            return ExitCode::OK;
+        }
+
+        $rsync = new Rsync($connection, interactive: $this->isInteractive(), verbose: $this->verbose);
+        $planner = new Planner($info, $rsync);
+
+        try {
+            $plan = $this->buildPlan(fn (): SyncPlan => $this->plan($planner, $database, $files, $paths));
+        } catch (RuntimeException $e) {
+            error($e->getMessage());
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        (new PlanRenderer($this))->render($remoteConfig, $info, $plan);
+
+        if ($this->dryRun) {
+            info($this->t('info.dry_run_done'));
+
+            return ExitCode::OK;
+        }
+
+        // Pushing overwrites shared data, so it always takes a typed yes.
+        $confirmed = $this->confirmPlan(
+            $this->t($direction === Direction::Pull ? 'prompts.confirm.pull' : 'prompts.confirm.push', [
+                'scope' => $plan->scopeSummary(),
+                'name' => $remoteConfig->name,
+            ]),
+            typedYes: $direction === Direction::Push,
+        );
+
+        if (! $confirmed) {
+            if ($this->isInteractive()) {
+                info($this->t('info.operation_cancelled'));
+
+                return ExitCode::OK;
+            }
+
+            return ExitCode::UNSPECIFIED_ERROR;
+        }
+
+        return $this->executePlan($remoteConfig->name, $connection, $info, $plan, $rsync);
+    }
 
     protected function t(string $key, array $params = []): string
     {
@@ -94,12 +231,8 @@ trait ResolvesRemote
             return null;
         }
 
-        if ($name !== null && ! $registry->has($name)) {
-            $matches = array_values(array_filter($names, fn (string $candidate) => str_starts_with($candidate, $name)));
-
-            if (count($matches) === 1) {
-                $name = $matches[0];
-            }
+        if ($name !== null) {
+            $name = $registry->expandName($name);
         }
 
         if ($name === null && count($names) === 1) {
@@ -227,10 +360,10 @@ trait ResolvesRemote
 
     /**
      * The one confirmation before executing a plan. --force answers yes;
-     * non-interactive runs without --force stop here; production runs escalate
-     * to a typed confirmation.
+     * non-interactive runs without --force stop here; $typedYes or a
+     * production run escalates to a typed confirmation.
      */
-    protected function confirmPlan(string $label): bool
+    protected function confirmPlan(string $label, bool $typedYes = false): bool
     {
         if ($this->force) {
             return true;
@@ -242,7 +375,7 @@ trait ResolvesRemote
             return false;
         }
 
-        if ($this->runsInProduction()) {
+        if ($typedYes || $this->runsInProduction()) {
             return $this->confirmWithTypedYes($label.' '.$this->t('prompts.confirm.typed_yes_suffix'));
         }
 
@@ -369,10 +502,11 @@ trait ResolvesRemote
         }
     }
 
-    protected function runLocalCraft(string ...$args): ProcessResult
+    protected function runLocalCraft(Connection $connection, string ...$args): ProcessResult
     {
-        $command = array_merge([PHP_BINARY, Craft::getAlias('@root').DIRECTORY_SEPARATOR.'craft'], $args);
-
-        return (new SymfonyProcessRunner())->run($command, (int) ($this->config()['timeouts']['transfer'] ?? 1800));
+        return (new SymfonyProcessRunner())->run(
+            [PHP_BINARY, Snapshots::craftBinary(), ...$args],
+            $connection->transferTimeout(),
+        );
     }
 }
