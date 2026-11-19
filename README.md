@@ -27,10 +27,12 @@ A Craft CMS module that syncs databases and storage files between remote and loc
 |---|---|
 | Craft CMS | 5.x |
 | PHP | 8.2+ |
-| Local tools | `ssh`, `rsync`, and the database client/dump tools (`mysql`+`mysqldump` or `psql`+`pg_dump`) |
-| Remote tools | `ssh`, `rsync`, and a PHP binary that satisfies the project. If the default `php` does not, expose a versioned binary such as `php8.4` on `PATH` and it is detected automatically, or pin one with `php_binary`. |
+| Local tools | OpenSSH (`ssh`, `ssh-keyscan`, `ssh-keygen`), `rsync` (including stock macOS openrsync), and the database client/dump tools (`mysql`+`mysqldump` or `psql`+`pg_dump`) |
+| Remote tools | SSH, `rsync`, the same database client/dump tools for your database driver, and a PHP binary that satisfies the project. If the default `php` does not, expose a versioned binary such as `php8.4` on `PATH`, or pin one with `php_binary`. A rejected pin stops the sync. |
 
 Run `craft remote-sync/doctor` to check everything is in place.
+
+The file preview uses `--itemize-changes` and transfers use `--progress`; rsync 3.1 is not required. For interactive enrollment of a new SSH host, use OpenSSH 8.4+ and compare the displayed SHA-256 fingerprint to one obtained independently from the server administrator. SSH aliases and explicit ports are resolved before scanning. For older clients, jump hosts or inaccessible key scans, verify and provision the host in `known_hosts` before running the sync.
 
 ---
 
@@ -116,13 +118,15 @@ craft remote-sync/pull [remote] [--database] [--files] [--no-backup] [--discard-
 
 Without flags it asks which remote and what to sync, verifies the host key, probes the remote, prints the plan, and asks for confirmation. For the database it backs up your local database (`pre-pull-*`), takes a snapshot on the remote, downloads and restores it, then runs `craft up` and clears caches. For files it rsyncs each configured path.
 
+Missing source directories are reported and skipped, not treated as empty directories for `--delete`. `storage/backups` and its descendants cannot be configured as file sync paths.
+
 ### Push (local → remote)
 
 ```bash
 craft remote-sync/push [remote] [--database] [--files] [--no-backup] [--delete] [--path=app,uploads] [--dry-run] [--force]
 ```
 
-Push requires the remote to have `push` enabled, always asks for a typed `yes` confirmation, and needs an explicit scope when run non-interactively. It backs up the remote database (`pre-push-*`) before uploading and restoring your local one, then runs `craft up` on the remote.
+Push requires the remote to have `push` enabled, asks for a typed `yes` confirmation unless `--force` is supplied, and needs an explicit scope when run non-interactively. It backs up the remote database (`pre-push-*`) before uploading and restoring your local one, then runs `craft up` on the remote.
 
 ### Doctor
 
@@ -130,7 +134,7 @@ Push requires the remote to have `push` enabled, always asks for a typed `yes` c
 craft remote-sync/doctor [remote]
 ```
 
-Checks local tools and, per remote, the host key, application path, PHP binary, and rsync.
+Checks local tools and, per remote, the host key, application path, PHP binary, rsync, database tools, and whether the backup directory is writable or can be created.
 
 ### Prune
 
@@ -138,7 +142,7 @@ Checks local tools and, per remote, the host key, application path, PHP binary, 
 craft remote-sync/prune [remote] [--local] [--remote] [--keep=5] [--all] [--dry-run] [--force]
 ```
 
-Deletes old snapshots created by this module, keeping the newest `--keep`. It leaves snapshots it did not create alone unless `--all` is given.
+`--keep=N` keeps the newest N of each type (`remote-sync-*`, `pre-pull-*`, `pre-push-*`) on each side. N must be a non-negative integer. Other snapshots are left alone unless `--all` is supplied, in which case they have a separate retention budget. Use `--dry-run` to inspect the selection.
 
 ---
 
@@ -146,10 +150,10 @@ Deletes old snapshots created by this module, keeping the newest `--keep`. It le
 
 Two kinds of database file are involved:
 
-- A **transfer snapshot** (`remote-sync-*`) is the data being moved. The copy on the remote is always cleaned up, even if you interrupt with Ctrl+C. On a pull, the copy downloaded to your machine is kept.
+- A **transfer snapshot** (`remote-sync-*`) is the data being moved. The module attempts to remove the remote copy even if a transfer fails. With PHP's `pcntl` extension it also attempts cleanup on Ctrl+C, hangup and termination. If SSH is unavailable, the process is killed forcibly, or the machine loses power, inspect `storage/backups` and prune leftovers. A successful pull keeps the local download by default.
 - A **backup** (`pre-pull-*` locally, `pre-push-*` on the remote) is a safety copy taken before a side is overwritten. It is kept, so you can roll back with `craft db/restore`.
 
-Both live in Craft's standard `storage/backups` directory. Skip the safety backup with `--no-backup`, and delete the downloaded snapshot once it has been imported with `--discard-snapshot`. Kept snapshots are subject to `remote-sync/prune`, which keeps the newest five by default.
+Both live in Craft's standard `storage/backups` directory. Skip the safety backup with `--no-backup`, and delete the downloaded snapshot once it has been imported with `--discard-snapshot`. On import failure the download is retained for recovery. Prune keeps the newest five per type by default.
 
 A push cleans up both copies of its transfer snapshot, local and remote. Only a pull leaves one behind.
 
@@ -174,7 +178,7 @@ composer require jorisnoo/craft-remote-sync
 composer require jorisnoo/craft-remote-sync:dev-craft-4
 ```
 
-Upgrading from 2.x? See [UPGRADING.md](UPGRADING.md) for the config and command changes.
+Upgrading from 2.0.0? See [UPGRADING.md](UPGRADING.md) for the config and command changes.
 
 ---
 

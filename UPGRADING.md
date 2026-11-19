@@ -1,4 +1,4 @@
-# Upgrading from 2.x
+# Upgrading from 2.0.0 to 2.0.1 or later
 
 The internals were rewritten into a layered architecture, and two commands were
 added (`doctor`, `prune`). The command names (`remote-sync/pull`,
@@ -8,7 +8,7 @@ added (`doctor`, `prune`). The command names (`remote-sync/pull`,
 
 Update `config/remote-sync.php`:
 
-| 2.x | Now |
+| 2.0.0 | 2.0.1+ |
 |---|---|
 | `pushAllowed => true` | `push => true` |
 | `timeouts.createSnapshot`, `timeouts.download`, `timeouts.upload`, `timeouts.fileSync` | `timeouts.remote` (short commands) and `timeouts.transfer` (data transfers) |
@@ -25,9 +25,9 @@ The default `paths` is now `['app']` and `exclude_paths` is `['craft-transforms'
 ## Command changes
 
 - Scope is chosen with `--database` and/or `--files`, or interactively (multi-select). The previous `database` / `files` / `both` prompt is gone.
-- New flags: `--no-backup`, `--keep-snapshot` (pull only), `--delete`, `--path=a,b`, `--dry-run`.
+- New flags: `--no-backup`, `--discard-snapshot` (pull only; the downloaded snapshot is otherwise kept), `--delete`, `--path=a,b`, `--dry-run`.
 - File deletion is opt-in. Rsync no longer deletes local or remote files unless you pass `--delete`; the plan preview shows what it would remove.
-- `push` now always asks for a typed `yes`, requires the remote's `push` to be `true`, and needs an explicit `--database`/`--files` scope when run non-interactively.
+- `push` asks for a typed `yes` unless `--force` is supplied, requires the remote's `push` to be `true`, and needs an explicit `--database`/`--files` scope when run non-interactively.
 - The ad-hoc `push --remoteHost=... --remotePath=...` remote was removed. Define the target in `config/remote-sync.php` instead.
 - Production is guarded by `allow_production`. The previous behavior of hiding the remote whose name matched the current environment was removed.
 

@@ -11,6 +11,9 @@ class Connection
 {
     private ProcessRunner $runner;
 
+    /** @var list<string> The fingerprints offered for confirmation by the latest scan. */
+    private array $scannedFingerprints = [];
+
     /** @var array<string, mixed>|null */
     private ?array $config;
 
@@ -36,7 +39,7 @@ class Connection
      */
     public function craft(RemoteInfo $info, string $arguments, ?int $timeout = null): ProcessResult
     {
-        $php = escapeshellarg($info->phpBinary ?? 'php');
+        $php = escapeshellarg($info->requirePhpBinary($this->remote));
         $path = escapeshellarg($info->workingPath);
 
         return $this->run("cd {$path} && {$php} craft {$arguments}", $timeout);
@@ -48,7 +51,7 @@ class Connection
     public function checkHostKey(): string
     {
         $result = $this->runner->run(
-            $this->sshArgs(['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=5'], 'exit'),
+            $this->sshArgs(['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=yes', '-o', 'ConnectTimeout=5'], 'exit'),
             10,
         );
 
@@ -67,30 +70,78 @@ class Connection
 
     public function hostFingerprints(): ?string
     {
-        $hostname = escapeshellarg($this->remote->hostname());
-        $port = $this->sshPort();
-        $portOption = $port !== null ? "-p {$port} " : '';
+        $this->scannedFingerprints = [];
+        // ssh-keyscan does not read ssh_config. Resolve the same target and
+        // port as the connection, and never scan a direct route for a proxy.
+        $settings = $this->runner->run($this->sshArgs(['-G']), 10);
+        $output = $settings->output();
+        if (! $settings->successful()
+            || preg_match('/^(?:proxycommand|proxyjump)[ \t]+(?!none[ \t]*\r?$).+/mi', $output)
+            || ! preg_match('/^hostname[ \t]+([\pL\pN_:][\pL\pN_.:%+-]*|\[[0-9a-f:.]+(?:%[\w.-]+)?\])[ \t]*\r?$/miu', $output, $host)
+            || ! preg_match('/^port[ \t]+(\d+)[ \t]*\r?$/mi', $output, $match)) {
+            return null;
+        }
+
+        $port = (int) $match[1];
+        if ($port < 1 || $port > 65535) {
+            return null;
+        }
+        $hostname = escapeshellarg(trim($host[1], '[]'));
 
         $result = $this->runner->run(
-            "ssh-keyscan {$portOption}-t ed25519,rsa,ecdsa {$hostname} 2>/dev/null | ssh-keygen -lf -",
+            "ssh-keyscan -p {$port} -t ed25519,rsa,ecdsa {$hostname} 2>/dev/null | ssh-keygen -E sha256 -lf -",
             10,
         );
 
-        if ($result->successful() && trim($result->output()) !== '') {
-            return trim($result->output());
+        if (! $result->successful()) {
+            return null;
         }
 
-        return null;
+        $lines = [];
+        foreach (explode("\n", trim($result->output())) as $line) {
+            $line = trim($line);
+            if (preg_match('/^\d+\s+(SHA256:[A-Za-z0-9+\/]{43})\s+.*\(\w+\)$/D', $line, $match)) {
+                $this->scannedFingerprints[] = $match[1];
+                $lines[] = $line;
+            }
+        }
+
+        return $lines === [] ? null : implode("\n", $lines);
     }
 
     public function acceptHostKey(): bool
     {
-        $result = $this->runner->run(
-            $this->sshArgs(['-o', 'StrictHostKeyChecking=accept-new', '-o', 'ConnectTimeout=10'], 'exit'),
-            15,
-        );
+        $fingerprints = $this->scannedFingerprints;
+        $this->scannedFingerprints = [];
+        if ($fingerprints === []) {
+            return false;
+        }
 
-        return ! str_contains($result->errorOutput(), 'Host key verification failed');
+        // Older clients cannot force askpass instead of reading /dev/tty.
+        // Leave enrollment to the operator rather than falling back to TOFU.
+        $version = $this->runner->run(['ssh', '-V'], 5);
+        if (! $version->successful()
+            || ! preg_match('/OpenSSH_(\d+\.\d+)/', $version->errorOutput().$version->output(), $match)
+            || version_compare($match[1], '8.4', '<')) {
+            return false;
+        }
+
+        $result = $this->runner->run([
+            'env', 'LC_ALL=C', 'SSH_ASKPASS_REQUIRE=force', 'SSH_ASKPASS='.__DIR__.'/confirm-fingerprint',
+            'REMOTE_SYNC_FINGERPRINTS='.implode(' ', $fingerprints),
+            ...$this->sshArgs([
+                '-S', 'none', '-o', 'StrictHostKeyChecking=ask', '-o', 'FingerprintHash=sha256',
+                '-o', 'UpdateHostKeys=no', '-o', 'CheckHostIP=no', '-o', 'VerifyHostKeyDNS=no',
+                '-o', 'BatchMode=no', '-o', 'NumberOfPasswordPrompts=0', '-o', 'LogLevel=INFO', '-o', 'ConnectTimeout=10',
+            ], 'exit'),
+        ], 15);
+
+        // An encrypted identity or password-only account can fail to log in
+        // through askpass even after OpenSSH has recorded the approved key.
+        return $result->successful() || preg_match(
+            "/^Warning: Permanently added .+ to the list of known hosts\\.\r?$/m",
+            $result->errorOutput(),
+        ) === 1;
     }
 
     public function remoteTimeout(): int
@@ -118,19 +169,19 @@ class Connection
      */
     public function sshTarget(): string
     {
-        return $this->parsedHost()['host'];
+        return $this->remote->sshTarget();
     }
 
     public function sshPort(): ?int
     {
-        return $this->parsedHost()['port'];
+        return $this->remote->sshPort();
     }
 
     /**
      * @param  list<string>  $options
      * @return list<string>
      */
-    private function sshArgs(array $options, string $command): array
+    private function sshArgs(array $options, ?string $command = null): array
     {
         $args = ['ssh', ...$options];
 
@@ -140,21 +191,11 @@ class Connection
         }
 
         $args[] = $this->sshTarget();
-        $args[] = $command;
-
-        return $args;
-    }
-
-    /**
-     * @return array{host: string, port: int|null}
-     */
-    private function parsedHost(): array
-    {
-        if (preg_match('/^(.+):(\d+)$/', $this->remote->host, $matches)) {
-            return ['host' => $matches[1], 'port' => (int) $matches[2]];
+        if ($command !== null) {
+            $args[] = $command;
         }
 
-        return ['host' => $this->remote->host, 'port' => null];
+        return $args;
     }
 
     /**

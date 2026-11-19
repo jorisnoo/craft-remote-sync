@@ -2,7 +2,20 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-19
+
+### Fixed
+
+- Pull and push now report step exceptions with recovery paths, clean up incomplete transfer snapshots, and exit unsuccessfully when interrupted. File transfers work with stock macOS rsync.
+- Dry-run no longer creates storage directories. Plans skip missing sources, distinguish content changes from metadata, and protect `storage/backups` from file synchronization.
+- SSH trust requires a visible fingerprint for the effective host and port. Remote commands no longer fall back to an incompatible PHP binary. Doctor checks remote database clients and backup-directory access.
+- Pruning rejects invalid retention counts and keeps independent budgets for transfer snapshots and safety backups.
+
 ## [2.0.1](https://github.com/jorisnoo/craft-remote-sync/releases/tag/2.0.1) (2026-07-09)
+
+### Breaking
+
+This patch changed config keys, timeouts, environment variables, push options and the module service API. See the [2.0.0 migration guide](UPGRADING.md) before updating from 2.0.0.
 
 ### Features
 

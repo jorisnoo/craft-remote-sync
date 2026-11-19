@@ -8,6 +8,7 @@ readonly class SyncPlan
      * @param  list<string>  $paths  Storage-relative paths in the files scope.
      * @param  array<string, FileChanges>  $fileChanges  Keyed by storage-relative path.
      * @param  array<string, list<string>>  $fileExcludes  Extra rsync excludes, keyed by storage-relative path.
+     * @param  list<string>  $skippedPaths  Requested paths with no source directory.
      */
     public function __construct(
         public Direction $direction,
@@ -21,6 +22,7 @@ readonly class SyncPlan
         public array $fileExcludes = [],
         public string $snapshotName = '',
         public string $backupName = '',
+        public array $skippedPaths = [],
     ) {}
 
     public function scopeSummary(): string

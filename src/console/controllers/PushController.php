@@ -74,7 +74,7 @@ class PushController extends Controller
 
         [$database, $files] = $scope;
 
-        $connection = new Connection($remoteConfig);
+        $connection = new Connection($remoteConfig, $this->processRunner(), $this->config());
 
         if (! $this->verifyHostKey($connection)) {
             return ExitCode::UNSPECIFIED_ERROR;
@@ -113,8 +113,8 @@ class PushController extends Controller
             return ExitCode::OK;
         }
 
-        $rsync = new Rsync($connection, interactive: $this->isInteractive(), verbose: $this->verbose);
-        $snapshots = new Snapshots($connection, $info);
+        $rsync = new Rsync($connection, interactive: $this->isInteractive(), verbose: $this->verbose, runner: $this->processRunner());
+        $snapshots = new Snapshots($connection, $info, $this->processRunner());
         $planner = new Planner($info, $rsync);
 
         try {
@@ -135,6 +135,12 @@ class PushController extends Controller
 
         if ($this->dryRun) {
             info($this->t('info.dry_run_done'));
+
+            return ExitCode::OK;
+        }
+
+        if (! $plan->database && ! $plan->files) {
+            info($this->t('info.no_operations_selected'));
 
             return ExitCode::OK;
         }
@@ -205,7 +211,7 @@ class PushController extends Controller
     {
         $cleanup = new CleanupStack();
 
-        $this->ensureCleanupOnExit($cleanup);
+        $restoreHandlers = $this->ensureCleanupOnExit($cleanup);
 
         try {
             if (! $this->runSteps($this->buildSteps($remoteName, $connection, $info, $plan, $snapshots, $rsync, $cleanup))) {
@@ -213,6 +219,7 @@ class PushController extends Controller
             }
         } finally {
             $this->runCleanup($cleanup);
+            $restoreHandlers();
         }
 
         info($this->t('success.pushed', ['scope' => $plan->scopeSummary(), 'name' => $remoteName]));
@@ -221,7 +228,7 @@ class PushController extends Controller
     }
 
     /**
-     * @return list<array{label: string, run: Closure(): ?string}>
+     * @return list<array{label: string, run: Closure(): ?string, onFailure?: Closure(): void}>
      */
     protected function buildSteps(string $remoteName, Connection $connection, RemoteInfo $info, SyncPlan $plan, Snapshots $snapshots, Rsync $rsync, CleanupStack $cleanup): array
     {
@@ -231,12 +238,17 @@ class PushController extends Controller
             if ($plan->backup) {
                 $steps[] = [
                     'label' => "Creating remote backup {$plan->backupName} on [{$remoteName}]",
-                    'run' => function () use ($snapshots, $plan): ?string {
+                    'run' => function () use ($snapshots, $plan, $cleanup): ?string {
+                        $label = 'incomplete remote safety backup';
+                        $this->registerRemoteCleanup($cleanup, $snapshots, $plan->backupName, $label);
                         $result = $snapshots->createRemote($plan->backupName, zip: true);
 
-                        return $result->successful()
-                            ? null
-                            : $this->t('errors.failed_remote_backup', ['error' => trim($result->errorOutput())]);
+                        if (! $result->successful()) {
+                            return $this->t('errors.failed_remote_backup', ['error' => trim($result->errorOutput())]);
+                        }
+                        $cleanup->forget($label);
+
+                        return null;
                     },
                 ];
             }
@@ -244,6 +256,7 @@ class PushController extends Controller
             $steps[] = [
                 'label' => 'Creating local snapshot',
                 'run' => function () use ($snapshots, $plan, $cleanup): ?string {
+                    $cleanup->push('local snapshot file', fn () => Snapshots::deleteLocal($plan->snapshotName));
                     try {
                         $snapshots->createLocal($plan->snapshotName, zip: false);
                     } catch (RuntimeException $e) {
@@ -251,7 +264,6 @@ class PushController extends Controller
                     }
 
                     Snapshots::sanitize(Snapshots::localPath($plan->snapshotName));
-                    $cleanup->push('local snapshot file', fn () => Snapshots::deleteLocal($plan->snapshotName));
 
                     return null;
                 },
@@ -260,17 +272,13 @@ class PushController extends Controller
             $steps[] = [
                 'label' => "Uploading snapshot to [{$remoteName}]",
                 'run' => function () use ($snapshots, $plan, $cleanup, $remoteName): ?string {
+                    $this->registerRemoteCleanup($cleanup, $snapshots, $plan->snapshotName, "temporary snapshot on [{$remoteName}]");
+
                     $result = $snapshots->upload($plan->snapshotName);
 
                     if (! $result->successful()) {
                         return $this->t('errors.failed_upload_snapshot', ['error' => trim($result->errorOutput())]);
                     }
-
-                    $cleanup->push("temporary snapshot on [{$remoteName}]", function () use ($snapshots, $plan) {
-                        if (! $snapshots->deleteRemote($plan->snapshotName)->successful()) {
-                            throw new RuntimeException("delete it manually: {$plan->snapshotName}");
-                        }
-                    });
 
                     return null;
                 },
@@ -278,17 +286,18 @@ class PushController extends Controller
 
             $steps[] = [
                 'label' => "Loading snapshot on [{$remoteName}]",
-                'run' => function () use ($snapshots, $plan, $info, $remoteName): ?string {
+                'onFailure' => function () use ($plan, $info, $remoteName): void {
+                    if ($plan->backup) {
+                        $this->failureNotes[] = $this->t('info.remote_restore_hint', [
+                            'name' => $remoteName,
+                            'path' => $info->backupDir().'/'.$plan->backupName.'.sql.zip',
+                        ]);
+                    }
+                },
+                'run' => function () use ($snapshots, $plan): ?string {
                     $result = $snapshots->loadRemote($plan->snapshotName);
 
                     if (! $result->successful()) {
-                        if ($plan->backup) {
-                            $this->failureNotes[] = $this->t('info.remote_restore_hint', [
-                                'name' => $remoteName,
-                                'path' => $info->backupDir().'/'.$plan->backupName.'.sql.zip',
-                            ]);
-                        }
-
                         return $this->t('errors.failed_remote_load', ['error' => trim($result->errorOutput())]);
                     }
 
@@ -314,12 +323,6 @@ class PushController extends Controller
                 'run' => function () use ($rsync, $info, $plan, $path): ?string {
                     $localPath = \Craft::$app->getPath()->getStoragePath().DIRECTORY_SEPARATOR.$path;
 
-                    if (! is_dir($localPath)) {
-                        warning($this->t('warnings.local_path_not_exists', ['path' => $path]));
-
-                        return null;
-                    }
-
                     $result = $rsync->transfer(
                         Direction::Push,
                         "{$info->storagePath()}/{$path}/",
@@ -330,7 +333,7 @@ class PushController extends Controller
 
                     return $result->successful()
                         ? null
-                        : $this->t('errors.failed_file_sync', ['path' => $path, 'error' => trim($result->errorOutput())]);
+                        : $this->t('errors.failed_file_sync', ['path' => $path, 'error' => trim($result->errorOutput()) ?: "rsync exited with code {$result->exitCode}"]);
                 },
             ];
         }

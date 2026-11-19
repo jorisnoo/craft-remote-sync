@@ -7,8 +7,8 @@ use RuntimeException;
 /**
  * Inspects a remote in a single SSH round-trip: it resolves the atomic-deploy
  * working path, finds a PHP binary whose platform satisfies the project's
- * requirements, and checks that rsync is present. The remote's answer is a
- * handful of marker lines parsed into an immutable RemoteInfo.
+ * requirements, and checks PATH tools and backup directory permissions.
+ * The remote's marker lines are parsed into an immutable RemoteInfo.
  */
 class Probe
 {
@@ -58,6 +58,7 @@ class Probe
         $escapedCandidates = implode(' ', array_map('escapeshellarg', $candidates));
         $base = escapeshellarg($remote->path);
         $marker = self::CD_FAILED_MARKER;
+        $tools = implode(' ', array_merge(...array_values(RemoteInfo::DB_TOOLS)));
 
         return "BASE={$base}; "
             .'if [ -L "$BASE/current" ]; then WORK="$BASE/current"; ATOMIC=1; else WORK="$BASE"; ATOMIC=0; fi; '
@@ -68,6 +69,12 @@ class Probe
             .'done; '
             .'echo "PHP=$PHP"; '
             .'if command -v rsync >/dev/null 2>&1; then echo RSYNC=1; else echo RSYNC=0; fi; '
+            ."for tool in {$tools}; do command -v \"\$tool\" >/dev/null 2>&1 && echo \"DB_TOOL=\$tool\"; done; "
+            // mkdir -p can create missing components, but not replace a file
+            // or a dangling symlink. Inspect the nearest existing ancestor.
+            .'dir=storage/backups; for parent in storage .; do '
+            .'[ ! -e "$dir" ] && [ ! -L "$dir" ] || break; dir="$parent"; done; '
+            .'if [ -d "$dir" ] && [ -w "$dir" ] && [ -x "$dir" ]; then echo BACKUPS=1; else echo BACKUPS=0; fi; '
             .'exit 0';
     }
 
@@ -76,6 +83,8 @@ class Probe
         $atomic = false;
         $phpBinary = null;
         $hasRsync = false;
+        $backupDirWritable = false;
+        $dbTools = [];
 
         foreach (preg_split('/\r?\n/', $output) ?: [] as $line) {
             $line = trim($line);
@@ -87,6 +96,10 @@ class Probe
                 $phpBinary = $value !== '' ? $value : null;
             } elseif (str_starts_with($line, 'RSYNC=')) {
                 $hasRsync = substr($line, strlen('RSYNC=')) === '1';
+            } elseif (str_starts_with($line, 'BACKUPS=')) {
+                $backupDirWritable = $line === 'BACKUPS=1';
+            } elseif (str_starts_with($line, 'DB_TOOL=')) {
+                $dbTools[] = substr($line, strlen('DB_TOOL='));
             }
         }
 
@@ -99,6 +112,8 @@ class Probe
             isAtomic: $isAtomic,
             workingPath: $workingPath,
             hasRsync: $hasRsync,
+            backupDirWritable: $backupDirWritable,
+            dbTools: $dbTools,
         );
     }
 }

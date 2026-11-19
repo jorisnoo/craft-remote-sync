@@ -4,6 +4,7 @@ namespace Noo\CraftRemoteSync\Sync;
 
 use Noo\CraftRemoteSync\Remotes\RemoteInfo;
 use Noo\CraftRemoteSync\Snapshots\Snapshots;
+use Noo\CraftRemoteSync\Support\StoragePath;
 use RuntimeException;
 
 /**
@@ -16,6 +17,7 @@ class Planner
     public function __construct(
         private RemoteInfo $info,
         private Rsync $rsync,
+        private ?string $localStoragePath = null,
     ) {}
 
     /**
@@ -38,15 +40,16 @@ class Planner
         return new SyncPlan(
             direction: Direction::Pull,
             database: $database,
-            files: $files,
+            files: $fileChanges !== [],
             backup: $backup,
             keepSnapshot: $keepSnapshot,
             delete: $delete,
-            paths: $files ? $paths : [],
+            paths: array_map('strval', array_keys($fileChanges)),
             fileChanges: $fileChanges,
             fileExcludes: $fileExcludes,
             snapshotName: $database ? Snapshots::transferName() : '',
             backupName: ($database && $backup) ? Snapshots::pullBackupName() : '',
+            skippedPaths: $files ? array_values(array_diff($paths, array_keys($fileChanges))) : [],
         );
     }
 
@@ -69,14 +72,15 @@ class Planner
         return new SyncPlan(
             direction: Direction::Push,
             database: $database,
-            files: $files,
+            files: $fileChanges !== [],
             backup: $backup,
             delete: $delete,
-            paths: $files ? $paths : [],
+            paths: array_map('strval', array_keys($fileChanges)),
             fileChanges: $fileChanges,
             fileExcludes: $fileExcludes,
             snapshotName: $database ? Snapshots::transferName() : '',
             backupName: ($database && $backup) ? Snapshots::pushBackupName() : '',
+            skippedPaths: $files ? array_values(array_diff($paths, array_keys($fileChanges))) : [],
         );
     }
 
@@ -91,58 +95,61 @@ class Planner
     protected function analyzeFiles(Direction $direction, array $paths): array
     {
         $changes = [];
-        $excludes = [];
+        foreach ($paths as $path) {
+            if (($error = StoragePath::validate($path)) !== null) {
+                throw new RuntimeException($error);
+            }
+        }
+
+        $missingRemote = $direction === Direction::Pull
+            ? array_fill_keys($this->rsync->missingRemoteSources($this->info->workingPath, $paths), true)
+            : [];
 
         foreach ($paths as $path) {
-            $localPath = \Craft::$app->getPath()->getStoragePath().DIRECTORY_SEPARATOR.$path;
-
-            if ($direction === Direction::Pull && ! is_dir($localPath)) {
-                mkdir($localPath, 0755, true);
-            }
-
-            if ($direction === Direction::Push && ! is_dir($localPath)) {
-                $changes[$path] = new FileChanges();
-                $excludes[$path] = [];
-
+            if (isset($missingRemote[$path])) {
                 continue;
             }
 
-            $excludes[$path] = $this->snapshotDirExcludesFor($path);
+            $storage = $this->localStoragePath ?? \Craft::$app->getPath()->getStoragePath(false);
+            $localPath = $this->previewLocalPath($storage.DIRECTORY_SEPARATOR.$path);
+
+            if ($direction === Direction::Push && ! is_dir($localPath)) {
+                continue;
+            }
 
             try {
                 $changes[$path] = $this->rsync->dryRun(
                     $direction,
                     "{$this->info->storagePath()}/{$path}/",
                     rtrim($localPath, '/').'/',
-                    excludes: $excludes[$path],
                     delete: true,
                 );
             } catch (RuntimeException $e) {
-                throw new RuntimeException("Could not analyze files for storage/{$path}: {$e->getMessage()}");
+                throw new RuntimeException("Could not analyze files for storage/{$path}: {$e->getMessage()}", previous: $e);
             }
         }
 
-        return [$changes, $excludes];
+        return [$changes, array_fill_keys(array_keys($changes), [])];
     }
 
     /**
-     * Keep the database backup directory (storage/backups, on both sides) out
-     * of a file sync when the synced path would otherwise include it.
-     *
-     * @return list<string>
+     * A dry-run can compare against a missing destination but some rsyncs
+     * require its parent to exist. The first missing directory represents
+     * the same empty tree; never create the destination just to preview it.
      */
-    protected function snapshotDirExcludesFor(string $path): array
+    private function previewLocalPath(string $path): string
     {
-        $backupsRelative = 'backups';
-
-        if ($path === '') {
-            return ['/'.$backupsRelative];
+        while (! is_dir($parent = dirname($path))) {
+            if (file_exists($parent) || is_link($parent) || $parent === $path) {
+                throw new RuntimeException("Not a storage directory: {$parent}");
+            }
+            $path = $parent;
         }
 
-        if (str_starts_with($backupsRelative, $path.'/')) {
-            return ['/'.substr($backupsRelative, strlen($path) + 1)];
+        if (! is_executable($parent) || ((file_exists($path) || is_link($path)) && ! is_dir($path))) {
+            throw new RuntimeException("Not an accessible storage directory: {$path}");
         }
 
-        return [];
+        return $path;
     }
 }

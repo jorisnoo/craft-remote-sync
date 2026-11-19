@@ -65,6 +65,13 @@ test('createRemote ensures the dir, then runs db/backup plain', function () {
         ->and(snapshotLine($fake, 'db/backup'))->not->toContain('--zip');
 });
 
+test('a failed remote mkdir stops before any dump is started', function () {
+    [$snap, $fake] = snapshotsSetup((new FakeProcessRunner())->stub('mkdir -p', stderr: 'permission denied', exitCode: 1));
+
+    expect(fn () => $snap->createRemote('remote-sync-test'))->toThrow(RuntimeException::class, 'permission denied');
+    expect($fake->calls)->toHaveCount(1);
+});
+
 test('createRemote can zip a kept backup', function () {
     [$snap, $fake] = snapshotsSetup();
 

@@ -36,17 +36,22 @@ class Snapshots
 
     public static function transferName(): string
     {
-        return 'remote-sync-'.date('Y-m-d-H-i-s').'-'.bin2hex(random_bytes(4));
+        return static::uniqueName('remote-sync');
     }
 
     public static function pullBackupName(): string
     {
-        return 'pre-pull-'.date('Y-m-d-H-i-s');
+        return static::uniqueName('pre-pull');
     }
 
     public static function pushBackupName(): string
     {
-        return 'pre-push-'.date('Y-m-d-H-i-s');
+        return static::uniqueName('pre-push');
+    }
+
+    private static function uniqueName(string $prefix): string
+    {
+        return $prefix.'-'.date('Y-m-d-H-i-s').'-'.bin2hex(random_bytes(4));
     }
 
     public static function isOwnSnapshot(string $name): bool
@@ -104,7 +109,7 @@ class Snapshots
      */
     public static function listLocal(): array
     {
-        $dir = static::localDir();
+        $dir = \Craft::$app->getPath()->getDbBackupPath(false);
         $files = array_merge(glob($dir.'/*.sql') ?: [], glob($dir.'/*.sql.zip') ?: []);
         $snapshots = [];
 
@@ -125,7 +130,7 @@ class Snapshots
     {
         $deleted = false;
 
-        foreach (['.sql', '.sql.zip'] as $extension) {
+        foreach (['.sql', '.sql.zip', '.sql.sanitize.tmp'] as $extension) {
             $path = static::localDir().DIRECTORY_SEPARATOR.$name.$extension;
 
             if (file_exists($path)) {
@@ -262,10 +267,13 @@ class Snapshots
 
     private function ensureRemoteBackupDir(): void
     {
-        $this->connection->run(
+        $result = $this->connection->run(
             'mkdir -p '.escapeshellarg($this->info->backupDir()),
             $this->connection->remoteTimeout(),
         );
+        if (! $result->successful()) {
+            throw new RuntimeException('Could not create remote backup directory '.$this->info->backupDir().': '.trim($result->errorOutput()));
+        }
     }
 
     /**
@@ -273,7 +281,8 @@ class Snapshots
      */
     private function rsyncBase(): array
     {
-        $args = ['rsync', '-az', '--partial'];
+        // Snapshot names are unique per run; a partial dump is never resumed.
+        $args = ['rsync', '-az'];
 
         if (($port = $this->connection->sshPort()) !== null) {
             $args[] = '-e';

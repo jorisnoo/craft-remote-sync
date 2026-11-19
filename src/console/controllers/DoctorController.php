@@ -6,9 +6,12 @@ use Craft;
 use craft\console\Controller;
 use craft\helpers\Console;
 use InvalidArgumentException;
+use Noo\CraftRemoteSync\Process\ProcessRunner;
 use Noo\CraftRemoteSync\Process\SymfonyProcessRunner;
 use Noo\CraftRemoteSync\Remotes\Connection;
 use Noo\CraftRemoteSync\Remotes\Probe;
+use Noo\CraftRemoteSync\Remotes\Remote;
+use Noo\CraftRemoteSync\Remotes\RemoteInfo;
 use Noo\CraftRemoteSync\Remotes\RemoteRegistry;
 use Noo\CraftRemoteSync\Snapshots\Snapshots;
 use RuntimeException;
@@ -32,7 +35,7 @@ class DoctorController extends Controller
         $this->checkLocal();
 
         $registry = new RemoteRegistry();
-        $names = $remote !== null ? [$remote] : $registry->names();
+        $names = $remote !== null ? [$registry->expandName($remote)] : $registry->names();
 
         if ($names === []) {
             $this->failCheck('Remotes', 'none configured in config/remote-sync.php');
@@ -59,17 +62,13 @@ class DoctorController extends Controller
     {
         $this->stdout("\nLocal environment\n", Console::BOLD);
 
-        $db = Craft::$app->getDb();
-        $driver = $db->getIsMysql() ? 'mysql' : ($db->getIsPgsql() ? 'pgsql' : $db->getDriverName());
+        $driver = $this->localDriver();
 
-        if ($driver === 'mysql') {
-            $this->passCheck('Database driver', 'mysql');
-            $this->checkLocalBinary('mysql');
-            $this->checkLocalBinary('mysqldump');
-        } elseif ($driver === 'pgsql') {
-            $this->passCheck('Database driver', 'pgsql');
-            $this->checkLocalBinary('psql');
-            $this->checkLocalBinary('pg_dump');
+        if (isset(RemoteInfo::DB_TOOLS[$driver])) {
+            $this->passCheck('Database driver', $driver);
+            foreach (RemoteInfo::DB_TOOLS[$driver] as $binary) {
+                $this->checkLocalBinary($binary);
+            }
         } else {
             $this->failCheck('Database driver', "{$driver} (backups need mysql or pgsql)");
         }
@@ -86,11 +85,34 @@ class DoctorController extends Controller
             : $this->failCheck('Backup directory', "{$backupDir} is not writable");
     }
 
+    private function localDriver(): string
+    {
+        $db = Craft::$app->getDb();
+
+        return $db->getIsMysql() ? 'mysql' : ($db->getIsPgsql() ? 'pgsql' : $db->getDriverName());
+    }
+
+    protected function processRunner(): ProcessRunner
+    {
+        return new SymfonyProcessRunner();
+    }
+
     protected function checkLocalBinary(string $binary): void
     {
-        (new SymfonyProcessRunner())->run('command -v '.escapeshellarg($binary), 10)->successful()
-            ? $this->passCheck($binary, 'found')
-            : $this->failCheck($binary, 'not found on PATH');
+        $runner = $this->processRunner();
+        if (! $runner->run('command -v '.escapeshellarg($binary), 10)->successful()) {
+            $this->failCheck($binary, 'not found on PATH');
+
+            return;
+        }
+
+        $detail = 'found';
+        if ($binary === 'rsync') {
+            $version = $runner->run(['rsync', '--version'], 10);
+            $line = strtok(trim($version->output()), "\r\n");
+            $detail = $version->successful() && $line !== false ? $line : 'found (version unavailable)';
+        }
+        $this->passCheck($binary, $detail);
     }
 
     protected function checkRemote(RemoteRegistry $registry, string $name): void
@@ -107,7 +129,7 @@ class DoctorController extends Controller
 
         $this->passCheck('Configuration', "{$remote->host}:{$remote->path}");
 
-        $connection = new Connection($remote);
+        $connection = new Connection($remote, $this->processRunner());
 
         switch ($connection->checkHostKey()) {
             case 'changed':
@@ -130,17 +152,32 @@ class DoctorController extends Controller
             return;
         }
 
+        $this->reportRemoteChecks($remote, $info, $this->localDriver());
+    }
+
+    protected function reportRemoteChecks(Remote $remote, RemoteInfo $info, string $driver): void
+    {
         $this->passCheck('Application path', $info->workingPath.($info->isAtomic ? ' (atomic deployment)' : ''));
 
-        $info->phpBinary !== null
-            ? $this->passCheck('PHP binary', $info->phpBinary)
-            : $this->failCheck('PHP binary', "none of the known binaries work — set 'php_binary' for this remote");
+        try {
+            $this->passCheck('PHP binary', $info->requirePhpBinary($remote));
+        } catch (RuntimeException $e) {
+            $this->failCheck('PHP binary', $e->getMessage());
+        }
 
         $info->hasRsync
             ? $this->passCheck('rsync', 'found')
             : $this->failCheck('rsync', 'not found on the remote');
 
-        $this->passCheck('Backup directory', $info->backupDir());
+        foreach (RemoteInfo::DB_TOOLS[$driver] ?? [] as $tool) {
+            in_array($tool, $info->dbTools, true)
+                ? $this->passCheck($tool, 'found')
+                : $this->failCheck($tool, 'not found on the remote PATH');
+        }
+
+        $info->backupDirWritable
+            ? $this->passCheck('Backup directory', $info->backupDir())
+            : $this->failCheck('Backup directory', "{$info->backupDir()} is not writable or cannot be created");
     }
 
     protected function passCheck(string $check, string $detail): void

@@ -28,8 +28,10 @@ return [
     'errors.failed_remote_load' => 'Failed to load the snapshot on the remote: {error}',
     'errors.failed_delete_snapshot' => 'Failed to delete snapshot: {name}',
     'errors.host_key_changed' => 'WARNING: The host key for [{host}] has changed. This could indicate a man-in-the-middle attack. Update your ~/.ssh/known_hosts manually if this change is expected.',
-    'errors.host_key_unknown_noninteractive' => 'The authenticity of host [{host}] cannot be verified. Run interactively to review the fingerprint, or run: ssh -o StrictHostKeyChecking=accept-new {ssh_host} exit',
+    'errors.host_key_unknown_noninteractive' => 'The authenticity of host [{host}] cannot be verified. Verify and install its host key before syncing, or run interactively to review its fingerprint.',
     'errors.host_key_failed' => 'Failed to save the host key.',
+    'errors.host_fingerprint_missing' => 'Could not display a fingerprint for [{host}]. Verify and install the host key independently before retrying.',
+    'errors.invalid_keep' => '--keep must be a non-negative integer, e.g. --keep=5.',
 
     // Warnings
     'warnings.unknown_host' => 'The authenticity of host [{host}] cannot be verified. It is not in your known_hosts file.',
@@ -50,9 +52,9 @@ return [
     'info.remote_restore_hint' => 'The remote database was backed up first. Restore it on [{name}] with: craft db/restore {path} --drop-all-tables',
     'info.snapshot_kept' => 'The downloaded snapshot was kept at: {path}',
     'info.cleaned_up' => 'Removed {what}.',
-    'info.nothing_to_prune' => 'Nothing to prune (keeping the {keep} most recent snapshots).',
-    'info.local_prune_header' => 'Local snapshots to delete (keeping the {keep} most recent):',
-    'info.remote_prune_header' => 'Snapshots to delete on [{name}] (keeping the {keep} most recent):',
+    'info.nothing_to_prune' => 'Nothing to prune (keeping the {keep} most recent per snapshot type).',
+    'info.local_prune_header' => 'Local snapshots to delete (keeping the {keep} most recent per type):',
+    'info.remote_prune_header' => 'Snapshots to delete on [{name}] (keeping the {keep} most recent per type):',
     'info.deleted_local_snapshots' => '{count, plural, =1{Deleted 1 local snapshot.} other{Deleted # local snapshots.}}',
     'info.deleted_remote_snapshots' => '{count, plural, =1{Deleted 1 remote snapshot.} other{Deleted # remote snapshots.}}',
 

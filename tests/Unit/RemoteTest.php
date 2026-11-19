@@ -48,3 +48,22 @@ test('hostname strips a port from a bare host', function () {
 
     expect($remote->hostname())->toBe('192.168.1.10');
 });
+
+test('a directly constructed remote rejects an option-like destination', function () {
+    new Remote(name: 'prod', host: '-invalid', path: '/var/www');
+})->throws(InvalidArgumentException::class, 'invalid SSH host');
+
+test('a numeric SSH port must be in range', function (string $port) {
+    new Remote(name: 'prod', host: "deploy@host:{$port}", path: '/var/www');
+})->with(['0', '65536'])->throws(InvalidArgumentException::class, 'invalid SSH port');
+
+test('SSH aliases and bracketed IPv6 keep the same destination for ssh and rsync', function (string $host, string $target, string $hostname, ?int $port) {
+    $remote = new Remote('prod', $host, '/app');
+
+    expect($remote->sshTarget())->toBe($target)
+        ->and($remote->hostname())->toBe($hostname)
+        ->and($remote->sshPort())->toBe($port);
+})->with([
+    ['prod-alias', 'prod-alias', 'prod-alias', null],
+    ['deploy@[2001:db8::1]:2222', 'deploy@[2001:db8::1]', '[2001:db8::1]', 2222],
+]);

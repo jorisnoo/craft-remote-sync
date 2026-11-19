@@ -1,0 +1,13 @@
+#!/bin/sh
+# OpenSSH accepts the exact negotiated fingerprint in place of "yes". Never
+# answer unrelated prompts or send a blanket confirmation, even on retries.
+case "$1" in
+    *'(yes/no/[fingerprint])?'*) ;;
+    *) exit 1 ;;
+esac
+for fingerprint in $REMOTE_SYNC_FINGERPRINTS; do
+    case "$1" in
+        *"$fingerprint"*) printf '%s\n' "$fingerprint"; exit 0 ;;
+    esac
+done
+exit 1

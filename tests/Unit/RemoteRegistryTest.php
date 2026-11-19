@@ -87,3 +87,17 @@ test('get rejects placeholder hosts', function () {
 test('get uppercases and underscores the remote name in the env var hint', function () {
     registry(['remotes' => ['my-remote' => ['path' => '/var/www']]])->get('my-remote');
 })->throws(InvalidArgumentException::class, 'REMOTE_SYNC_MY_REMOTE_HOST');
+
+test('get rejects SSH option-like hosts before any process is run', function (string $host) {
+    registry(['remotes' => ['production' => ['host' => $host, 'path' => '/var/www']]])->get('production');
+})->with(['-invalid', 'deploy@-invalid', ' deployment host ', 'host:non-numeric', 'host::module', 'deploy@'])
+    ->throws(InvalidArgumentException::class, 'invalid SSH host');
+
+test('only unambiguous remote prefixes are expanded', function () {
+    $registry = registry(['remotes' => ['prod' => [], 'production' => [], 'preview' => []]]);
+
+    expect($registry->expandName('prod'))->toBe('prod')
+        ->and($registry->expandName('pre'))->toBe('preview')
+        ->and($registry->expandName('pr'))->toBe('pr')
+        ->and($registry->expandName('missing'))->toBe('missing');
+});

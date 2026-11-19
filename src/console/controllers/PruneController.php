@@ -29,7 +29,8 @@ class PruneController extends Controller
 
     public bool $remote = false;
 
-    public int $keep = 5;
+    /** A null default keeps Yii from coercing malformed command-line values. */
+    public mixed $keep = null;
 
     public bool $all = false;
 
@@ -44,7 +45,13 @@ class PruneController extends Controller
     {
         $pruneLocal = $this->local || ! $this->remote;
         $pruneRemote = $this->remote || ! $this->local;
-        $keep = max(0, $this->keep);
+        $raw = $this->keep ?? '5';
+        if ((! is_string($raw) && ! is_int($raw)) || ! ctype_digit((string) $raw)) {
+            error($this->t('errors.invalid_keep'));
+
+            return ExitCode::USAGE;
+        }
+        $keep = (int) $raw;
 
         $localVictims = $pruneLocal ? $this->prunable(Snapshots::listLocal(), $keep) : [];
 
@@ -59,7 +66,7 @@ class PruneController extends Controller
                 return ExitCode::UNSPECIFIED_ERROR;
             }
 
-            $connection = new Connection($remoteConfig);
+            $connection = new Connection($remoteConfig, $this->processRunner(), $this->config());
 
             if (! $this->verifyHostKey($connection)) {
                 return ExitCode::UNSPECIFIED_ERROR;
@@ -72,7 +79,7 @@ class PruneController extends Controller
             }
 
             $remoteName = $remoteConfig->name;
-            $snapshots = new Snapshots($connection, $info);
+            $snapshots = new Snapshots($connection, $info, $this->processRunner());
             $remoteVictims = $this->prunable($snapshots->listRemote(), $keep);
         }
 
@@ -132,22 +139,35 @@ class PruneController extends Controller
     }
 
     /**
-     * Keep the N most recent snapshots and return the rest. Snapshots not
-     * created by this package are left alone unless --all is given.
+     * Keep an independent budget for transfers, pre-pull backups and pre-push
+     * backups. With --all, unrelated snapshots use a separate budget too.
      *
      * @param  array<int, array{name: string, path: string, mtime: int}>  $snapshots
      * @return array<int, array{name: string, path: string, mtime: int}>
      */
     protected function prunable(array $snapshots, int $keep): array
     {
-        if (! $this->all) {
-            $snapshots = array_values(array_filter(
-                $snapshots,
-                fn (array $snapshot) => Snapshots::isOwnSnapshot($snapshot['name'])
-            ));
+        $counts = [];
+        $victims = [];
+        foreach ($snapshots as $snapshot) {
+            $group = 'other';
+            foreach (Snapshots::NAME_PREFIXES as $prefix) {
+                if (str_starts_with($snapshot['name'], $prefix)) {
+                    $group = $prefix;
+                    break;
+                }
+            }
+            if ($group === 'other' && ! $this->all) {
+                continue;
+            }
+
+            $counts[$group] = ($counts[$group] ?? 0) + 1;
+            if ($counts[$group] > $keep) {
+                $victims[] = $snapshot;
+            }
         }
 
-        return array_slice($snapshots, $keep);
+        return $victims;
     }
 
     /**

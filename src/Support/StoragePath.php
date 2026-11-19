@@ -16,8 +16,12 @@ class StoragePath
             return "Invalid path '{$path}': must stay within the storage directory.";
         }
 
-        if (! preg_match('#^[A-Za-z0-9](?:[A-Za-z0-9._-]|/(?!/))*$#', $path)) {
+        if (! preg_match('#^[A-Za-z0-9](?:[A-Za-z0-9._-]|/(?!/))*$#D', $path)) {
             return "Invalid path '{$path}': only letters, numbers, dots, dashes, underscores and single slashes are allowed.";
+        }
+
+        if (strcasecmp(explode('/', $path, 2)[0], 'backups') === 0) {
+            return "Invalid path '{$path}': storage/backups holds database backups and cannot be synced.";
         }
 
         return null;

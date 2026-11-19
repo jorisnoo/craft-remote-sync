@@ -6,26 +6,51 @@ on:
   pull_request:
     branches: [main, craft-4]
 
+permissions:
+  contents: read
+
 jobs:
   tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        php: ['8.2', '8.3']
+        php: ['8.2', '8.3', '8.4', '8.5']
 
     name: PHP ${{ matrix.php }}
 
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup PHP
         uses: shivammathur/setup-php@2.40.0
         with:
           php-version: ${{ matrix.php }}
           coverage: none
+          extensions: pcntl, posix, intl, bcmath, gd, imagick, zip
 
       - name: Install dependencies
         run: composer install --no-interaction --prefer-dist
 
+      - name: Validate manifest and dependencies
+        run: |
+          composer validate --strict
+          composer check-platform-reqs
+          composer audit
+
       - name: Run tests
         run: composer test
+
+  required:
+    name: Package checks
+    needs: tests
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: test "$RESULT" = success
+        env:
+          RESULT: ${{ needs.tests.result }}

@@ -64,7 +64,7 @@ class PullController extends Controller
 
         [$database, $files] = $this->resolveScope();
 
-        $connection = new Connection($remoteConfig);
+        $connection = new Connection($remoteConfig, $this->processRunner(), $this->config());
 
         if (! $this->verifyHostKey($connection)) {
             return ExitCode::UNSPECIFIED_ERROR;
@@ -103,8 +103,8 @@ class PullController extends Controller
             return ExitCode::OK;
         }
 
-        $rsync = new Rsync($connection, interactive: $this->isInteractive(), verbose: $this->verbose);
-        $snapshots = new Snapshots($connection, $info);
+        $rsync = new Rsync($connection, interactive: $this->isInteractive(), verbose: $this->verbose, runner: $this->processRunner());
+        $snapshots = new Snapshots($connection, $info, $this->processRunner());
         $planner = new Planner($info, $rsync);
 
         try {
@@ -126,6 +126,12 @@ class PullController extends Controller
 
         if ($this->dryRun) {
             info($this->t('info.dry_run_done'));
+
+            return ExitCode::OK;
+        }
+
+        if (! $plan->database && ! $plan->files) {
+            info($this->t('info.no_operations_selected'));
 
             return ExitCode::OK;
         }
@@ -174,7 +180,7 @@ class PullController extends Controller
     {
         $cleanup = new CleanupStack();
 
-        $this->ensureCleanupOnExit($cleanup);
+        $restoreHandlers = $this->ensureCleanupOnExit($cleanup);
 
         try {
             if (! $this->runSteps($this->buildSteps($remoteName, $info, $plan, $snapshots, $rsync, $cleanup))) {
@@ -182,6 +188,7 @@ class PullController extends Controller
             }
         } finally {
             $this->runCleanup($cleanup);
+            $restoreHandlers();
         }
 
         info($this->t('success.pulled', ['scope' => $plan->scopeSummary(), 'name' => $remoteName]));
@@ -194,7 +201,7 @@ class PullController extends Controller
     }
 
     /**
-     * @return list<array{label: string, run: Closure(): ?string}>
+     * @return list<array{label: string, run: Closure(): ?string, onFailure?: Closure(): void}>
      */
     protected function buildSteps(string $remoteName, RemoteInfo $info, SyncPlan $plan, Snapshots $snapshots, Rsync $rsync, CleanupStack $cleanup): array
     {
@@ -219,17 +226,13 @@ class PullController extends Controller
             $steps[] = [
                 'label' => "Creating snapshot on [{$remoteName}]",
                 'run' => function () use ($snapshots, $plan, $cleanup, $remoteName): ?string {
+                    $this->registerRemoteCleanup($cleanup, $snapshots, $plan->snapshotName, "temporary snapshot on [{$remoteName}]");
+
                     $result = $snapshots->createRemote($plan->snapshotName);
 
                     if (! $result->successful()) {
                         return $this->t('errors.failed_remote_snapshot', ['error' => trim($result->errorOutput())]);
                     }
-
-                    $cleanup->push("temporary snapshot on [{$remoteName}]", function () use ($snapshots, $plan) {
-                        if (! $snapshots->deleteRemote($plan->snapshotName)->successful()) {
-                            throw new RuntimeException("delete it manually: {$plan->snapshotName}");
-                        }
-                    });
 
                     return null;
                 },
@@ -238,14 +241,15 @@ class PullController extends Controller
             $steps[] = [
                 'label' => "Downloading snapshot from [{$remoteName}]",
                 'run' => function () use ($snapshots, $plan, $cleanup): ?string {
+                    $cleanup->push('downloaded snapshot file', fn () => Snapshots::deleteLocal($plan->snapshotName));
                     $result = $snapshots->download($plan->snapshotName);
 
                     if (! $result->successful()) {
                         return $this->t('errors.failed_download_snapshot', ['error' => trim($result->errorOutput())]);
                     }
 
-                    if (! $plan->keepSnapshot) {
-                        $cleanup->push('downloaded snapshot file', fn () => Snapshots::deleteLocal($plan->snapshotName));
+                    if ($plan->keepSnapshot) {
+                        $cleanup->forget('downloaded snapshot file');
                     }
 
                     return null;
@@ -261,12 +265,11 @@ class PullController extends Controller
 
             $steps[] = [
                 'label' => 'Importing database',
-                'run' => function () use ($snapshots, $plan, $cleanup): ?string {
+                'onFailure' => fn () => $this->noteImportFailure($plan, $cleanup),
+                'run' => function () use ($snapshots, $plan): ?string {
                     $result = $snapshots->restoreLocal($plan->snapshotName);
 
                     if (! $result->successful()) {
-                        $this->noteImportFailure($plan, $cleanup);
-
                         return $this->t('errors.failed_import', ['error' => trim($result->errorOutput())]);
                     }
 
@@ -304,7 +307,7 @@ class PullController extends Controller
 
                     return $result->successful()
                         ? null
-                        : $this->t('errors.failed_file_sync', ['path' => $path, 'error' => trim($result->errorOutput())]);
+                        : $this->t('errors.failed_file_sync', ['path' => $path, 'error' => trim($result->errorOutput()) ?: "rsync exited with code {$result->exitCode}"]);
                 },
             ];
         }

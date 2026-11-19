@@ -1,5 +1,7 @@
 <?php
 
+use Noo\CraftRemoteSync\Process\ProcessResult;
+use Noo\CraftRemoteSync\Process\SymfonyProcessRunner;
 use Noo\CraftRemoteSync\Remotes\Connection;
 use Noo\CraftRemoteSync\Remotes\Remote;
 use Noo\CraftRemoteSync\Sync\Direction;
@@ -34,6 +36,30 @@ test('transfer push reverses source and destination', function () {
     expect($fake->calls[0])->toBe('rsync -avz --partial --exclude=.* /local/app/ forge@server.test:app/');
 });
 
+test('interactive progress uses portable flags and captured streams rather than a tty', function () {
+    $fake = new class extends FakeProcessRunner {
+        public bool $tty;
+        public bool $streams;
+
+        public function run(array|string $command, ?int $timeout = null, ?callable $onOutput = null, bool $tty = false): ProcessResult
+        {
+            $this->tty = $tty;
+            $this->streams = $onOutput !== null;
+
+            return parent::run($command, $timeout, $onOutput, $tty);
+        }
+    };
+    $fake->fallback(stderr: 'transfer interrupted', exitCode: 1);
+    $connection = new Connection(new Remote('prod', 'server.test', '/var/www'), $fake, []);
+
+    $result = (new Rsync($connection, interactive: true, runner: $fake))->transfer(Direction::Pull, 'app/', '/local/app/');
+
+    expect($fake->calls)->toBe(['rsync -avz --partial --progress --exclude=.* server.test:app/ /local/app/'])
+        ->and($fake->tty)->toBeFalse()
+        ->and($fake->streams)->toBeTrue()
+        ->and($result->errorOutput())->toBe('transfer interrupted');
+});
+
 test('transfer with a port adds an ssh -e option', function () {
     [$rsync, $fake] = rsyncSetup('forge@server.test:2222', ['timeouts' => ['transfer' => 10], 'exclude_paths' => []]);
 
@@ -64,11 +90,18 @@ test('parse extracts transfers and deletions from itemized output', function () 
         'cd+++++++++ uploads/',
         '>f.st...... uploads/changed.png',
         '*deleting uploads/old.jpg',
+        '*deleting   uploads/empty/',
+        'deleting uploads/old-protocol.txt',
+        '.f...p..... uploads/permissions',
+        '.L..t...... uploads/unchanged -> target',
+        'cL+++++++++ uploads/link -> target/',
+        '<f+++++++++ regular -> file',
+        '<f+++++++++ trailing space ',
         '',
     ]));
 
-    expect($changes->transfers)->toBe(['uploads/new.jpg', 'uploads/changed.png'])
-        ->and($changes->deletions)->toBe(['uploads/old.jpg']);
+    expect($changes->transfers)->toBe(['uploads/new.jpg', 'uploads/changed.png', 'uploads/link', 'regular -> file', 'trailing space '])
+        ->and($changes->deletions)->toBe(['uploads/old.jpg', 'uploads/old-protocol.txt']);
 });
 
 test('dryRun parses the rsync output', function () {
@@ -88,3 +121,28 @@ test('dryRun throws when rsync fails', function () {
 
     (new Rsync($connection, runner: $fake))->dryRun(Direction::Pull, 'app/', '/local/app/');
 })->throws(RuntimeException::class);
+
+test('source inspection distinguishes absent nested directories from invalid paths without SSH', function () {
+    $root = sys_get_temp_dir().'/craft remote-sync-'.bin2hex(random_bytes(8));
+    mkdir($root.'/storage/app/uploads', 0700, true);
+    touch($root.'/storage/not-a-directory');
+
+    // Run only the remote shell fragment against this disposable local tree.
+    $connection = Mockery::mock(Connection::class);
+    $connection->shouldReceive('run')->andReturnUsing(fn (string $script) =>
+        (new SymfonyProcessRunner())->run(['sh', '-c', $script], 5));
+    $rsync = new Rsync($connection, runner: new FakeProcessRunner());
+
+    try {
+        expect($rsync->missingRemoteSources($root, ['app/uploads', 'no/parent', 'app/absent']))
+            ->toBe(['no/parent', 'app/absent']);
+        expect(fn () => $rsync->missingRemoteSources($root, ['not-a-directory/child']))
+            ->toThrow(RuntimeException::class);
+    } finally {
+        unlink($root.'/storage/not-a-directory');
+        rmdir($root.'/storage/app/uploads');
+        rmdir($root.'/storage/app');
+        rmdir($root.'/storage');
+        rmdir($root);
+    }
+});

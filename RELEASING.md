@@ -11,10 +11,15 @@ Release from `main` using an explicit version without a `v` prefix. `CHANGELOG.m
 Configured release checks:
 
 ```sh
+composer validate --strict
+composer check-platform-reqs
+composer audit
 composer test
 ```
 
 Install the project’s normal dependencies first. The helper runs these checks when publishing; dry-run prints them without executing them. Run any additional checks needed for the changed behavior before committing.
+
+The `Package checks` status on pull requests and default-branch pushes requires Pest to pass on PHP 8.2 through 8.5. The test bootstrap loads the installed Craft 5 framework; use `composer update` when switching major-version branches in the same checkout.
 
 ## Release
 

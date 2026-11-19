@@ -7,21 +7,23 @@ use Craft;
 use InvalidArgumentException;
 use Noo\CraftRemoteSync\Module;
 use Noo\CraftRemoteSync\Process\ProcessResult;
+use Noo\CraftRemoteSync\Process\ProcessRunner;
 use Noo\CraftRemoteSync\Process\SymfonyProcessRunner;
 use Noo\CraftRemoteSync\Remotes\Connection;
 use Noo\CraftRemoteSync\Remotes\Probe;
 use Noo\CraftRemoteSync\Remotes\Remote;
 use Noo\CraftRemoteSync\Remotes\RemoteInfo;
 use Noo\CraftRemoteSync\Remotes\RemoteRegistry;
+use Noo\CraftRemoteSync\Snapshots\Snapshots;
 use Noo\CraftRemoteSync\Support\CleanupStack;
 use Noo\CraftRemoteSync\Support\StoragePath;
 use RuntimeException;
+use Throwable;
 
 use function Laravel\Prompts\confirm;
 use function Laravel\Prompts\error;
 use function Laravel\Prompts\info;
 use function Laravel\Prompts\select;
-use function Laravel\Prompts\spin;
 use function Laravel\Prompts\table;
 use function Laravel\Prompts\text;
 use function Laravel\Prompts\warning;
@@ -45,6 +47,13 @@ trait ResolvesRemote
 
     /** @var list<string> Guidance printed under a failed step (e.g. restore instructions). */
     protected array $failureNotes = [];
+
+    protected ?ProcessRunner $runner = null;
+
+    protected function processRunner(): ProcessRunner
+    {
+        return $this->runner ??= new SymfonyProcessRunner();
+    }
 
     protected function t(string $key, array $params = []): string
     {
@@ -85,7 +94,7 @@ trait ResolvesRemote
 
     protected function resolveRemote(?string $name): ?Remote
     {
-        $registry = new RemoteRegistry();
+        $registry = new RemoteRegistry($this->config());
         $names = $registry->names();
 
         if ($names === []) {
@@ -94,12 +103,8 @@ trait ResolvesRemote
             return null;
         }
 
-        if ($name !== null && ! $registry->has($name)) {
-            $matches = array_values(array_filter($names, fn (string $candidate) => str_starts_with($candidate, $name)));
-
-            if (count($matches) === 1) {
-                $name = $matches[0];
-            }
+        if ($name !== null) {
+            $name = $registry->expandName($name);
         }
 
         if ($name === null && count($names) === 1) {
@@ -135,7 +140,8 @@ trait ResolvesRemote
 
     protected function verifyHostKey(Connection $connection): bool
     {
-        $status = spin(fn () => $connection->checkHostKey(), $this->t('spinners.verifying_host'));
+        info($this->t('spinners.verifying_host'));
+        $status = $connection->checkHostKey();
 
         if ($status === 'ok') {
             return true;
@@ -150,10 +156,7 @@ trait ResolvesRemote
         }
 
         if (! $this->isInteractive()) {
-            error($this->t('errors.host_key_unknown_noninteractive', [
-                'host' => $hostname,
-                'ssh_host' => $connection->remote->host,
-            ]));
+            error($this->t('errors.host_key_unknown_noninteractive', ['host' => $hostname]));
 
             return false;
         }
@@ -162,25 +165,27 @@ trait ResolvesRemote
 
         $fingerprints = $connection->hostFingerprints();
 
-        if ($fingerprints !== null) {
-            $rows = [];
-
-            foreach (explode("\n", $fingerprints) as $line) {
-                if (preg_match('/^\d+\s+(SHA256:\S+)\s+.*\((\w+)\)$/', trim($line), $matches)) {
-                    $rows[] = [$matches[2], $matches[1]];
-                }
-            }
-
-            if ($rows !== []) {
-                table(['Type', 'Fingerprint'], $rows);
+        $rows = [];
+        foreach (explode("\n", $fingerprints ?? '') as $line) {
+            if (preg_match('/^\d+\s+(SHA256:\S+)\s+.*\(([\w-]+)\)$/', trim($line), $matches)) {
+                $rows[] = [$matches[2], $matches[1]];
             }
         }
+
+        if ($rows === []) {
+            error($this->t('errors.host_fingerprint_missing', ['host' => $hostname]));
+
+            return false;
+        }
+
+        table(['Type', 'Fingerprint'], $rows);
 
         if (! confirm(label: $this->t('prompts.confirm.accept_host_key', ['host' => $hostname]), default: false)) {
             return false;
         }
 
-        $accepted = spin(fn () => $connection->acceptHostKey(), $this->t('spinners.accepting_host_key'));
+        info($this->t('spinners.accepting_host_key'));
+        $accepted = $connection->acceptHostKey();
 
         if (! $accepted) {
             error($this->t('errors.host_key_failed'));
@@ -196,10 +201,11 @@ trait ResolvesRemote
     protected function probeRemote(Connection $connection): ?RemoteInfo
     {
         try {
-            return spin(
-                fn () => (new Probe())->run($connection),
-                $this->t('spinners.probing', ['name' => $connection->remote->name]),
-            );
+            info($this->t('spinners.probing', ['name' => $connection->remote->name]));
+            $info = (new Probe())->run($connection);
+            $info->requirePhpBinary($connection->remote);
+
+            return $info;
         } catch (RuntimeException $e) {
             error($e->getMessage());
             info($this->t('info.doctor_hint', ['name' => $connection->remote->name]));
@@ -209,20 +215,13 @@ trait ResolvesRemote
     }
 
     /**
-     * Build the sync plan behind a spinner. In verbose mode the spinner is
-     * dropped so the file dry-run's live rsync output stays legible.
-     *
      * @param  Closure(): mixed  $callback
      */
     protected function buildPlan(Closure $callback): mixed
     {
-        if ($this->verbose) {
-            info($this->t('spinners.building_plan'));
+        info($this->t('spinners.building_plan'));
 
-            return $callback();
-        }
-
-        return spin($callback, $this->t('spinners.building_plan'));
+        return $callback();
     }
 
     /**
@@ -290,17 +289,21 @@ trait ResolvesRemote
      * Run numbered execution steps. Each step returns an error message or null;
      * the first failure prints the error plus any queued failure notes and stops.
      *
-     * @param  list<array{label: string, run: Closure(): ?string}>  $steps
+     * @param  list<array{label: string, run: Closure(): ?string, onFailure?: Closure(): void}>  $steps
      */
     protected function runSteps(array $steps): bool
     {
         $total = count($steps);
+        $this->failureNotes = [];
 
         foreach ($steps as $index => $step) {
             $number = $index + 1;
             $error = $this->runStep("{$number}/{$total} {$step['label']}", $step['run']);
 
             if ($error !== null) {
+                if (isset($step['onFailure'])) {
+                    $step['onFailure']();
+                }
                 error($error);
 
                 foreach ($this->failureNotes as $note) {
@@ -319,13 +322,23 @@ trait ResolvesRemote
      */
     protected function runStep(string $label, Closure $fn): ?string
     {
-        if ($this->verbose) {
-            info($label);
-
+        // Do not fork a Prompts spinner while a sync is mutating data:
+        // it replaces our SIGINT handler and interferes with rsync output.
+        info($label);
+        try {
             return $fn();
+        } catch (Throwable $e) {
+            return "{$label}: {$e->getMessage()}";
         }
+    }
 
-        return spin($fn, $label);
+    protected function registerRemoteCleanup(CleanupStack $cleanup, Snapshots $snapshots, string $name, string $label): void
+    {
+        $cleanup->push($label, static function () use ($snapshots, $name) {
+            if (! $snapshots->deleteRemote($name)->successful()) {
+                throw new RuntimeException("delete it manually: {$name}");
+            }
+        });
     }
 
     protected function runCleanup(CleanupStack $cleanup): void
@@ -342,19 +355,14 @@ trait ResolvesRemote
     }
 
     /**
-     * Clean up temporary snapshots on any exit, including an interrupt.
-     *
-     * laravel/prompts' spin() installs its own SIGINT handler that calls exit()
-     * and resets the handler to SIG_DFL afterwards, so a plain pcntl SIGINT trap
-     * does not survive across steps. Running the cleanup from a shutdown function
-     * covers exit() (the spinner's Ctrl+C, our SIGTERM handler, or a fatal) as
-     * well as the normal finally path. CleanupStack is idempotent, so a cleanup
-     * that already ran in the finally block is a silent no-op here.
+     * Best-effort cleanup for fatal exits and catchable termination signals.
+     * Only the process that owns the snapshots may run its cleanup stack.
      */
-    protected function ensureCleanupOnExit(CleanupStack $cleanup): void
+    protected function ensureCleanupOnExit(CleanupStack $cleanup): Closure
     {
-        register_shutdown_function(function () use ($cleanup) {
-            if ($cleanup->isEmpty()) {
+        $owner = getmypid();
+        register_shutdown_function(function () use ($cleanup, $owner) {
+            if (getmypid() !== $owner || $cleanup->isEmpty()) {
                 return;
             }
 
@@ -363,16 +371,30 @@ trait ResolvesRemote
             $this->runCleanup($cleanup);
         });
 
+        $handlers = [];
+        $async = false;
         if (function_exists('pcntl_signal')) {
-            pcntl_async_signals(true);
-            pcntl_signal(SIGTERM, static fn () => exit(1));
+            $async = pcntl_async_signals(true);
+            foreach ([SIGINT, SIGTERM, SIGHUP] as $signal) {
+                $handlers[$signal] = pcntl_signal_get_handler($signal);
+                pcntl_signal($signal, static fn (int $received) => exit(128 + $received));
+            }
         }
+
+        return static function () use ($handlers, $async) {
+            foreach ($handlers as $signal => $handler) {
+                pcntl_signal($signal, $handler);
+            }
+            if ($handlers !== []) {
+                pcntl_async_signals($async);
+            }
+        };
     }
 
     protected function runLocalCraft(string ...$args): ProcessResult
     {
         $command = array_merge([PHP_BINARY, Craft::getAlias('@root').DIRECTORY_SEPARATOR.'craft'], $args);
 
-        return (new SymfonyProcessRunner())->run($command, (int) ($this->config()['timeouts']['transfer'] ?? 1800));
+        return $this->processRunner()->run($command, (int) ($this->config()['timeouts']['transfer'] ?? 1800));
     }
 }

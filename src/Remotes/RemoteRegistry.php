@@ -39,6 +39,21 @@ class RemoteRegistry
         return in_array($name, $this->names(), true);
     }
 
+    /** Expand only an unambiguous prefix; exact matches always take precedence. */
+    public function expandName(string $name): string
+    {
+        if ($this->has($name)) {
+            return $name;
+        }
+
+        $matches = array_values(array_filter(
+            $this->names(),
+            fn (string $candidate) => str_starts_with($candidate, $name),
+        ));
+
+        return count($matches) === 1 ? $matches[0] : $name;
+    }
+
     public function defaultName(): ?string
     {
         $default = $this->config()['default'] ?? null;

@@ -34,17 +34,15 @@ class Rsync
         $options = ['-avz', '--partial'];
 
         if ($this->interactive) {
-            $options[] = '--info=progress2';
+            $options[] = '--progress';
         }
 
         $command = $this->command($direction, $remotePath, $localPath, $options, $excludes, $delete);
 
-        // In verbose non-interactive runs, stream rsync output instead of capturing it silently.
-        $onOutput = (! $this->interactive && $this->verbose)
-            ? fn (string $type, string $buffer) => fwrite($type === 'err' ? STDERR : STDOUT, $buffer)
-            : null;
+        // Keep stderr available to the caller even when showing live progress.
+        $onOutput = ($this->interactive || $this->verbose) ? self::streamOutput(...) : null;
 
-        return $this->runner->run($command, $this->connection->transferTimeout(), $onOutput, tty: $this->interactive);
+        return $this->runner->run($command, $this->connection->transferTimeout(), $onOutput);
     }
 
     /**
@@ -74,7 +72,7 @@ class Rsync
         $result = $this->runner->run(
             $command,
             $this->connection->transferTimeout(),
-            $this->verbose ? fn (string $type, string $buffer) => fwrite($type === 'err' ? STDERR : STDOUT, $buffer) : null,
+            $this->verbose ? self::streamOutput(...) : null,
         );
 
         if (! $result->successful()) {
@@ -82,6 +80,53 @@ class Rsync
         }
 
         return $this->parse($result->output());
+    }
+
+    /**
+     * Check all pull sources in one read-only SSH call. Walk the components
+     * from a searchable directory so that an inaccessible parent (or a file
+     * where a directory was expected) is an error, not a missing source.
+     *
+     * @param  list<string>  $paths  Validated storage-relative paths.
+     * @return list<string>
+     */
+    public function missingRemoteSources(string $workingPath, array $paths): array
+    {
+        if ($paths === []) {
+            return [];
+        }
+
+        $script = 'CDPATH= cd '.escapeshellarg($workingPath)." || exit 1\n"
+            .'set -- '.implode(' ', array_map('escapeshellarg', $paths))."\n"
+            .<<<'SH'
+            set -f
+            for path do
+                (
+                    IFS=/
+                    for part in storage $path; do
+                        if [ ! -e "./$part" ] && [ ! -L "./$part" ]; then
+                            printf 'MISSING=%s\n' "$path"
+                            break
+                        fi
+                        cd "./$part" || exit 1
+                    done
+                ) || exit 1
+            done
+            SH;
+
+        $result = $this->connection->run($script);
+        if (! $result->successful()) {
+            throw new RuntimeException(trim($result->errorOutput()) ?: 'Could not inspect remote storage directories.');
+        }
+
+        $missing = [];
+        foreach (explode("\n", $result->output()) as $line) {
+            if (str_starts_with($line, 'MISSING=')) {
+                $missing[] = substr($line, 8);
+            }
+        }
+
+        return $missing;
     }
 
     /**
@@ -124,26 +169,33 @@ class Rsync
         return array_merge(['rsync'], $options, $sshOption, $excludeOptions, [$source, $destination]);
     }
 
+    private static function streamOutput(string $type, string $buffer): void
+    {
+        fwrite($type === 'err' ? STDERR : STDOUT, $buffer);
+    }
+
     public function parse(string $output): FileChanges
     {
         $transfers = [];
         $deletions = [];
 
         foreach (explode("\n", $output) as $line) {
-            $line = trim($line);
+            $line = rtrim($line, "\r");
 
-            if ($line === '' || str_starts_with($line, 'sending') || str_starts_with($line, 'receiving')) {
-                continue;
-            }
-
-            if (str_starts_with($line, '*deleting')) {
-                $deletions[] = trim(substr($line, strlen('*deleting')));
+            if (preg_match('/^\*?deleting\s+(.+)$/', $line, $match)) {
+                if (! str_ends_with($match[1], '/')) {
+                    $deletions[] = $match[1];
+                }
 
                 continue;
             }
 
-            if (preg_match('/^[<>ch.][fdLDS]/', $line) && ! str_ends_with($line, '/')) {
-                $transfers[] = preg_replace('/^[<>ch.][fdLDS][^ ]* /', '', $line);
+            // YXcstpoguax: only transferred/created non-directories count,
+            // not directory entries or attribute-only (.f...) updates.
+            if (preg_match('/^[<>c]([fLDS])\S{7,9} (.+)$/', $line, $match)) {
+                $transfers[] = $match[1] === 'L'
+                    ? preg_split('/ (?:->|=>) /', $match[2], 2)[0]
+                    : $match[2];
             }
         }
 
